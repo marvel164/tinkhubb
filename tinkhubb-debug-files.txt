@@ -1,0 +1,1815 @@
+===== app/play/[gameId]/results/page.tsx =====
+"use client";
+
+import {
+  ArrowRight,
+  Flame,
+  Loader2,
+  Medal,
+  RotateCcw,
+  Trophy,
+} from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+
+type GameResult = {
+  completed: boolean;
+  gameId: string;
+  score: number;
+  correctAnswers: number;
+  incorrectAnswers: number;
+  questionsAnswered: number;
+  totalQuestions: number;
+};
+
+type LeaderboardPlayer = {
+  rank: number;
+  id: string;
+  username: string;
+  totalPoints: number;
+  dailyStreak: number;
+};
+
+type LeaderboardResponse = {
+  weekly: LeaderboardPlayer[];
+  global: LeaderboardPlayer[];
+  currentUser: LeaderboardPlayer | null;
+  totalPlayers: number;
+  updatedAt: string;
+};
+
+function getResultMessage(
+  correctAnswers: number,
+  totalQuestions: number,
+) {
+  const accuracy =
+    totalQuestions > 0
+      ? (correctAnswers / totalQuestions) * 100
+      : 0;
+
+  if (accuracy === 100) {
+    return "Perfect round!";
+  }
+
+  if (accuracy >= 80) {
+    return "Excellent round!";
+  }
+
+  if (accuracy >= 60) {
+    return "Solid round.";
+  }
+
+  if (accuracy >= 40) {
+    return "Good effort.";
+  }
+
+  return "Keep playing.";
+}
+
+function formatPoints(points: number) {
+  return points.toLocaleString();
+}
+
+function WeeklyPlayer({
+  player,
+}: {
+  player: LeaderboardPlayer;
+}) {
+  return (
+    <div className="flex items-center gap-4 border-b border-[#f1e8e2] px-5 py-4 last:border-b-0 sm:px-6">
+      <div
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-black ${
+          player.rank === 1
+            ? "bg-[#ff6b00] text-white"
+            : "bg-[#ffe8d4] text-[#451900]"
+        }`}
+      >
+        {player.rank}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-bold text-[#451900]">
+          {player.username}
+        </p>
+
+        <p className="mt-0.5 flex items-center gap-1 text-xs text-[#6f7278]">
+          <Flame
+            size={12}
+            fill="#ff6b00"
+            className="text-[#ff6b00]"
+          />
+          {player.dailyStreak} day streak
+        </p>
+      </div>
+
+      <p className="text-sm font-black text-[#451900]">
+        {formatPoints(player.totalPoints)}
+      </p>
+    </div>
+  );
+}
+
+export default function GameResultsPage() {
+  const params = useParams<{ gameId: string }>();
+  const router = useRouter();
+
+  const gameId = params.gameId;
+
+  const [game, setGame] =
+    useState<GameResult | null>(null);
+
+  const [leaderboard, setLeaderboard] =
+    useState<LeaderboardResponse | null>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadResults() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const [gameResponse, leaderboardResponse] =
+          await Promise.all([
+            fetch(`/api/game/${gameId}`, {
+              cache: "no-store",
+            }),
+            fetch("/api/leaderboard", {
+              cache: "no-store",
+            }),
+          ]);
+
+        const gameResponseData =
+          (await gameResponse.json()) as {
+            success?: boolean;
+            data?: GameResult;
+            message?: string;
+            error?: string;
+          };
+
+        const leaderboardData =
+          (await leaderboardResponse.json()) as LeaderboardResponse & {
+            error?: string;
+            message?: string;
+          };
+
+        if (!gameResponse.ok) {
+          throw new Error(
+            gameResponseData.message ||
+              gameResponseData.error ||
+              "Unable to load your game results.",
+          );
+        }
+
+        const gameData = gameResponseData.data;
+
+        if (!gameData) {
+          throw new Error(
+            "Game results were not returned.",
+          );
+        }
+
+        if (!gameData.completed) {
+          router.replace(`/play/${gameId}`);
+          return;
+        }
+
+        if (!leaderboardResponse.ok) {
+          throw new Error(
+            leaderboardData.message ||
+              leaderboardData.error ||
+              "Unable to load leaderboard.",
+          );
+        }
+
+        if (!cancelled) {
+          setGame(gameData);
+          setLeaderboard(leaderboardData);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Unable to load your game results.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadResults();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId, router]);
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#fffaf6]">
+        <header className="border-b border-[#f1e5dc] bg-[#fffaf6]">
+          <div className="mx-auto flex h-[78px] max-w-[1240px] items-center px-5 sm:px-8">
+            <a
+              href="/"
+              className="text-[23px] font-black tracking-[-0.04em] text-[#121212]"
+            >
+              TinkHubb
+            </a>
+          </div>
+        </header>
+
+        <div className="flex min-h-[70vh] items-center justify-center">
+          <div className="flex items-center gap-3 text-sm font-semibold text-[#6f7278]">
+            <Loader2
+              size={20}
+              className="animate-spin text-[#ff6b00]"
+            />
+            Loading your results...
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (error || !game) {
+    return (
+      <main className="min-h-screen bg-[#fffaf6]">
+        <header className="border-b border-[#f1e5dc] bg-[#fffaf6]">
+          <div className="mx-auto flex h-[78px] max-w-[1240px] items-center px-5 sm:px-8">
+            <a
+              href="/"
+              className="text-[23px] font-black tracking-[-0.04em] text-[#121212]"
+            >
+              TinkHubb
+            </a>
+          </div>
+        </header>
+
+        <div className="mx-auto flex min-h-[70vh] max-w-[600px] items-center px-5 text-center">
+          <div className="w-full rounded-[20px] border border-[#eadfd7] bg-white p-8 shadow-sm">
+            <p className="text-lg font-black text-[#451900]">
+              We couldn't load your results.
+            </p>
+
+            <p className="mt-2 text-sm leading-6 text-[#6f7278]">
+              {error || "Something went wrong."}
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                window.location.reload()
+              }
+              className="mt-6 rounded-full bg-[#ff6b00] px-6 py-3 text-sm font-bold text-white"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  const accuracy =
+    game.totalQuestions > 0
+      ? Math.round(
+          (game.correctAnswers /
+            game.totalQuestions) *
+            100,
+        )
+      : 0;
+
+  const resultMessage = getResultMessage(
+    game.correctAnswers,
+    game.totalQuestions,
+  );
+
+  const currentUser =
+    leaderboard?.currentUser ?? null;
+
+  const weeklyPlayers =
+    leaderboard?.weekly?.slice(0, 3) ?? [];
+
+  return (
+    <main className="min-h-screen bg-[#fffaf6] text-[#121212]">
+      {/* HEADER */}
+      <header className="border-b border-[#f1e5dc] bg-[#fffaf6]">
+        <div className="mx-auto flex h-[78px] max-w-[1240px] items-center justify-between px-5 sm:px-8">
+          <a
+            href="/"
+            className="text-[23px] font-black tracking-[-0.04em] text-[#121212]"
+          >
+            TinkHubb
+          </a>
+
+          <nav className="hidden items-center gap-8 md:flex">
+            <a
+              href="/"
+              className="text-[13px] font-semibold text-[#6f7278] hover:text-[#121212]"
+            >
+              HOME
+            </a>
+
+            <a
+              href="/play"
+              className="text-[13px] font-semibold text-[#6f7278] hover:text-[#121212]"
+            >
+              PLAY GAME
+            </a>
+
+            <a
+              href="/leaderboard"
+              className="text-[13px] font-semibold text-[#6f7278] hover:text-[#121212]"
+            >
+              LEADERBOARD
+            </a>
+
+            <a
+              href="/how-it-works"
+              className="text-[13px] font-semibold text-[#6f7278] hover:text-[#121212]"
+            >
+              HOW IT WORKS
+            </a>
+          </nav>
+
+          <a
+            href="/play"
+            className="rounded-full bg-[#ff6b00] px-5 py-3 text-xs font-bold text-white"
+          >
+            PLAY AGAIN
+          </a>
+        </div>
+      </header>
+
+      {/* RESULTS HERO */}
+      <section className="relative overflow-hidden px-5 pb-12 pt-14 sm:px-8 sm:pt-16">
+        <div className="pointer-events-none absolute left-1/2 top-0 h-[280px] w-[280px] -translate-x-1/2 rounded-full bg-[#ffe8d4] opacity-60 blur-3xl" />
+
+        <div className="relative mx-auto max-w-[760px] text-center">
+          {/* TROPHY */}
+          <div className="mx-auto flex h-[76px] w-[76px] items-center justify-center rounded-full bg-[#ff6b00] shadow-[0_14px_35px_rgba(255,107,0,0.22)]">
+            <Trophy
+              size={34}
+              strokeWidth={2.2}
+              className="text-white"
+            />
+          </div>
+
+          <p className="mt-6 text-xs font-bold uppercase tracking-[0.18em] text-[#ff6b00]">
+            ROUND COMPLETE
+          </p>
+
+          <h1 className="mt-3 text-[42px] font-black leading-[0.98] tracking-[-0.055em] text-[#451900] sm:text-[58px]">
+            {game.correctAnswers} out of{" "}
+            {game.totalQuestions}
+          </h1>
+
+          <p className="mt-4 text-lg font-bold text-[#451900]">
+            {resultMessage}
+          </p>
+
+          <p className="mx-auto mt-2 max-w-[520px] text-sm leading-6 text-[#6f7278]">
+            You answered {game.questionsAnswered}{" "}
+            {game.questionsAnswered === 1
+              ? "question"
+              : "questions"}{" "}
+            and earned {formatPoints(game.score)}{" "}
+            {game.score === 1 ? "point" : "points"}.
+          </p>
+        </div>
+      </section>
+
+      {/* STATS */}
+      <section className="px-5 pb-10 sm:px-8">
+        <div className="mx-auto grid max-w-[760px] grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-[18px] border border-[#eadfd7] bg-white px-5 py-6 text-center shadow-[0_8px_25px_rgba(69,25,0,0.04)]">
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#6f7278]">
+              POINTS
+            </p>
+
+            <p className="mt-2 text-3xl font-black text-[#451900]">
+              {formatPoints(game.score)}
+            </p>
+          </div>
+
+          <div className="rounded-[18px] border border-[#eadfd7] bg-white px-5 py-6 text-center shadow-[0_8px_25px_rgba(69,25,0,0.04)]">
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#6f7278]">
+              CORRECT
+            </p>
+
+            <p className="mt-2 text-3xl font-black text-[#451900]">
+              {game.correctAnswers}
+            </p>
+          </div>
+
+          <div className="rounded-[18px] border border-[#eadfd7] bg-white px-5 py-6 text-center shadow-[0_8px_25px_rgba(69,25,0,0.04)]">
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#6f7278]">
+              ACCURACY
+            </p>
+
+            <p className="mt-2 text-3xl font-black text-[#451900]">
+              {accuracy}%
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ACTIONS */}
+      <section className="px-5 pb-14 sm:px-8">
+        <div className="mx-auto flex max-w-[760px] flex-col gap-3 sm:flex-row sm:justify-center">
+          <button
+            type="button"
+            onClick={() => router.push("/play")}
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#ff6b00] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_25px_rgba(255,107,0,0.18)] transition hover:bg-[#e85f00]"
+          >
+            <RotateCcw size={16} />
+            Play Again
+          </button>
+
+          <button
+            type="button"
+            onClick={() => router.push("/leaderboard")}
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-[#d9ccc4] bg-white px-7 py-3.5 text-sm font-bold text-[#451900] transition hover:border-[#ff6b00] hover:text-[#ff6b00]"
+          >
+            View Leaderboard
+            <ArrowRight size={16} />
+          </button>
+        </div>
+      </section>
+
+      {/* CURRENT POSITION */}
+      {currentUser && (
+        <section className="border-y border-[#eadfd7] bg-[#ffe8d4] px-5 py-10 sm:px-8">
+          <div className="mx-auto max-w-[760px]">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.15em] text-[#6f7278]">
+                  YOUR CURRENT POSITION
+                </p>
+
+                <p className="mt-2 text-2xl font-black tracking-[-0.04em] text-[#451900]">
+                  #{currentUser.rank}
+                </p>
+
+                <p className="mt-1 text-sm text-[#6f7278]">
+                  {currentUser.username}
+                </p>
+              </div>
+
+              <div className="flex gap-8">
+                <div>
+                  <p className="text-xs text-[#6f7278]">
+                    Total Points
+                  </p>
+                  <p className="mt-1 text-lg font-black text-[#451900]">
+                    {formatPoints(
+                      currentUser.totalPoints,
+                    )}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-[#6f7278]">
+                    Streak
+                  </p>
+                  <p className="mt-1 flex items-center gap-1 text-lg font-black text-[#451900]">
+                    <Flame
+                      size={16}
+                      fill="#ff6b00"
+                      className="text-[#ff6b00]"
+                    />
+                    {currentUser.dailyStreak}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* WEEKLY */}
+      <section className="px-5 pb-20 pt-14 sm:px-8">
+        <div className="mx-auto max-w-[760px]">
+          <div className="text-center">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#ff6b00]">
+              KEEP CLIMBING
+            </p>
+
+            <h2 className="mt-2 text-3xl font-black tracking-[-0.045em] text-[#451900]">
+              Top Players This Week
+            </h2>
+
+            <p className="mx-auto mt-3 max-w-[500px] text-sm leading-6 text-[#6f7278]">
+              See who's leading the week after your round.
+            </p>
+          </div>
+
+          {weeklyPlayers.length > 0 ? (
+            <div className="mt-8 overflow-hidden rounded-[20px] border border-[#eadfd7] bg-white shadow-[0_10px_30px_rgba(69,25,0,0.05)]">
+              {weeklyPlayers.map((player) => (
+                <WeeklyPlayer
+                  key={player.id}
+                  player={player}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="mt-8 rounded-[20px] border border-[#eadfd7] bg-white p-9 text-center">
+              <Medal
+                size={30}
+                className="mx-auto text-[#ff6b00]"
+              />
+
+              <p className="mt-3 text-sm font-bold text-[#451900]">
+                You're among the first players this week.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="border-t border-[#eadfd7] bg-[#fffaf6] px-5 py-8 sm:px-8">
+        <div className="mx-auto flex max-w-[1040px] flex-col gap-3 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left">
+          <p className="text-sm font-black text-[#121212]">
+            TinkHubb
+          </p>
+
+          <p className="text-xs text-[#6f7278]">
+            Play smart. Stay consistent. Climb higher.
+          </p>
+        </div>
+      </footer>
+    </main>
+  );
+}
+
+===== app/api/game/[gameId]/route.ts =====
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth/session";
+
+type RouteContext = {
+  params: Promise<{
+    gameId: string;
+  }>;
+};
+
+export async function GET(_request: Request, { params }: RouteContext) {
+  try {
+    const user = await getCurrentUser();
+
+    if (!user || user.status !== "ACTIVE") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "You must be logged in to play.",
+        },
+        { status: 401 },
+      );
+    }
+
+    const { gameId } = await params;
+
+    const game = await prisma.gameSession.findFirst({
+      where: {
+        id: gameId,
+        userId: user.id,
+      },
+      include: {
+        questions: {
+          orderBy: {
+            questionNumber: "asc",
+          },
+        },
+      },
+    });
+
+    if (!game) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Game not found.",
+        },
+        { status: 404 },
+      );
+    }
+
+    const currentQuestion =
+      game.questions.find((question) => !question.answered) ?? null;
+
+    if (!currentQuestion) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          gameId: game.id,
+          status: game.status,
+          completed: game.status === "COMPLETED",
+
+          totalQuestions: game.totalQuestions,
+          currentQuestionNumber: game.totalQuestions,
+
+          questionTimeSeconds: game.questionTimeSeconds,
+
+          score: game.score,
+          correctAnswers: game.correctAnswers,
+          incorrectAnswers: game.incorrectAnswers,
+          questionsAnswered: game.questionsAnswered,
+
+          durationSeconds: game.durationSeconds,
+          completedAt: game.completedAt,
+        },
+      });
+    }
+
+    let questionStartedAt = currentQuestion.startedAt;
+
+    if (!questionStartedAt) {
+      questionStartedAt = new Date();
+
+      await prisma.gameQuestion.update({
+        where: {
+          id: currentQuestion.id,
+        },
+        data: {
+          startedAt: questionStartedAt,
+        },
+      });
+    }
+
+    const expiresAt = new Date(
+      questionStartedAt.getTime() + game.questionTimeSeconds * 1000,
+    );
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        gameId: game.id,
+        status: game.status,
+        completed: false,
+
+        totalQuestions: game.totalQuestions,
+        currentQuestionNumber: currentQuestion.questionNumber,
+
+        questionTimeSeconds: game.questionTimeSeconds,
+        questionStartedAt,
+        expiresAt,
+
+        score: game.score,
+        correctAnswers: game.correctAnswers,
+        incorrectAnswers: game.incorrectAnswers,
+        questionsAnswered: game.questionsAnswered,
+
+        question: {
+          id: currentQuestion.id,
+          questionNumber: currentQuestion.questionNumber,
+          text: currentQuestion.questionText,
+
+          options: [
+            {
+              key: "A",
+              text: currentQuestion.optionA,
+            },
+            {
+              key: "B",
+              text: currentQuestion.optionB,
+            },
+            {
+              key: "C",
+              text: currentQuestion.optionC,
+            },
+            {
+              key: "D",
+              text: currentQuestion.optionD,
+            },
+          ],
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Game fetch error:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Unable to load the game.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function POST(request: Request, { params }: RouteContext) {
+  try {
+    const user = await getCurrentUser();
+
+    if (!user || user.status !== "ACTIVE") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "You must be logged in to play.",
+        },
+        { status: 401 },
+      );
+    }
+
+    const { gameId } = await params;
+
+    const body = await request.json();
+
+    const selectedOption =
+      typeof body.selectedOption === "string"
+        ? body.selectedOption.toUpperCase().trim()
+        : "";
+
+    const validOptions = ["A", "B", "C", "D"];
+
+    if (selectedOption && !validOptions.includes(selectedOption)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid answer option.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const game = await prisma.gameSession.findFirst({
+      where: {
+        id: gameId,
+        userId: user.id,
+        status: "IN_PROGRESS",
+      },
+      include: {
+        questions: {
+          orderBy: {
+            questionNumber: "asc",
+          },
+        },
+      },
+    });
+
+    if (!game) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Active game not found.",
+        },
+        { status: 404 },
+      );
+    }
+
+    const currentQuestion = game.questions.find(
+      (question) => !question.answered,
+    );
+
+    if (!currentQuestion) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "This game has already been completed.",
+        },
+        { status: 409 },
+      );
+    }
+
+    const startedAt = currentQuestion.startedAt ?? new Date();
+    const now = new Date();
+
+    const elapsedMs = now.getTime() - startedAt.getTime();
+
+    const timeExpired =
+      elapsedMs >= game.questionTimeSeconds * 1000;
+
+    const timedOut = !selectedOption || timeExpired;
+
+    const result = timedOut
+      ? "TIMEOUT"
+      : selectedOption === currentQuestion.correctOption
+        ? "CORRECT"
+        : "INCORRECT";
+
+    const pointsEarned =
+      result === "CORRECT" ? currentQuestion.pointsAvailable : 0;
+
+    const responseTimeMs = Math.max(
+      0,
+      Math.min(
+        elapsedMs,
+        game.questionTimeSeconds * 1000,
+      ),
+    );
+
+    const nextQuestion = game.questions.find(
+      (question) =>
+        question.questionNumber ===
+        currentQuestion.questionNumber + 1,
+    );
+
+    const isLastQuestion = !nextQuestion;
+
+    const updatedGame = await prisma.$transaction(async (tx) => {
+      /*
+       * Claim the question first.
+       *
+       * This prevents two simultaneous requests from awarding
+       * the same question twice.
+       */
+      const claimedQuestion =
+        await tx.gameQuestion.updateMany({
+          where: {
+            id: currentQuestion.id,
+            answered: false,
+          },
+          data: {
+            answered: true,
+            answeredAt: now,
+          },
+        });
+
+      if (claimedQuestion.count !== 1) {
+        throw new Error("QUESTION_ALREADY_ANSWERED");
+      }
+
+      await tx.gameAnswer.create({
+        data: {
+          userId: user.id,
+          gameQuestionId: currentQuestion.id,
+          selectedOption: selectedOption || null,
+          result,
+          pointsEarned,
+          responseTimeMs,
+          answeredAt: now,
+        },
+      });
+
+      const updated = await tx.gameSession.update({
+        where: {
+          id: game.id,
+        },
+        data: {
+          score: {
+            increment: pointsEarned,
+          },
+
+          correctAnswers:
+            result === "CORRECT"
+              ? { increment: 1 }
+              : undefined,
+
+          incorrectAnswers:
+            result !== "CORRECT"
+              ? { increment: 1 }
+              : undefined,
+
+          questionsAnswered: {
+            increment: 1,
+          },
+
+          ...(isLastQuestion
+            ? {
+                status: "COMPLETED",
+                completedAt: now,
+
+                durationSeconds: Math.round(
+                  (now.getTime() -
+                    game.startedAt.getTime()) /
+                    1000,
+                ),
+
+                scoreReachedAt:
+                  pointsEarned > 0
+                    ? now
+                    : game.scoreReachedAt,
+              }
+            : {}),
+        },
+      });
+
+      /*
+       * Update lifetime user statistics.
+       *
+       * Leaderboard reads from User.totalPoints,
+       * not GameSession.score.
+       */
+      await tx.user.update({
+        where: {
+          id: user.id,
+        },
+        data: {
+          totalPoints: {
+            increment: pointsEarned,
+          },
+
+          questionsAnswered: {
+            increment: 1,
+          },
+
+          correctAnswers:
+            result === "CORRECT"
+              ? { increment: 1 }
+              : undefined,
+
+          ...(isLastQuestion
+            ? {
+                gamesPlayed: {
+                  increment: 1,
+                },
+              }
+            : {}),
+
+          ...(pointsEarned > 0
+            ? {
+                totalPointsReachedAt: now,
+              }
+            : {}),
+        },
+      });
+
+      if (nextQuestion) {
+        await tx.gameQuestion.update({
+          where: {
+            id: nextQuestion.id,
+          },
+          data: {
+            startedAt: now,
+          },
+        });
+      }
+
+      return updated;
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        result,
+        pointsEarned,
+
+        completed: isLastQuestion,
+
+        gameId: updatedGame.id,
+
+        score: updatedGame.score,
+        correctAnswers: updatedGame.correctAnswers,
+        incorrectAnswers: updatedGame.incorrectAnswers,
+        questionsAnswered: updatedGame.questionsAnswered,
+
+        nextQuestionNumber:
+          nextQuestion?.questionNumber ?? null,
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "QUESTION_ALREADY_ANSWERED"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "This question has already been answered.",
+        },
+        { status: 409 },
+      );
+    }
+
+    console.error("Game answer error:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Unable to submit your answer.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+===== app/api/leaderboard/route.ts =====
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth/session";
+
+const WEEK_TIMEZONE = "Africa/Lagos";
+
+function getStartOfWeekInLagos() {
+  const now = new Date();
+
+  const lagosFormatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: WEEK_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  });
+
+  const parts = lagosFormatter.formatToParts(now);
+
+  const year = Number(
+    parts.find((part) => part.type === "year")?.value,
+  );
+
+  const month = Number(
+    parts.find((part) => part.type === "month")?.value,
+  );
+
+  const day = Number(
+    parts.find((part) => part.type === "day")?.value,
+  );
+
+  const weekday =
+    parts.find((part) => part.type === "weekday")?.value ?? "Mon";
+
+  const weekdayIndex: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+
+  const daysFromMonday =
+    (weekdayIndex[weekday] ?? 1) - 1 >= 0
+      ? (weekdayIndex[weekday] ?? 1) - 1
+      : 6;
+
+  /*
+   * Nigeria is UTC+1 and does not observe daylight saving time.
+   * Build Monday 00:00 in Lagos and convert it to UTC.
+   */
+  const mondayUtcMillis = Date.UTC(
+    year,
+    month - 1,
+    day - daysFromMonday,
+    0,
+    0,
+    0,
+  );
+
+  return new Date(mondayUtcMillis - 60 * 60 * 1000);
+}
+
+export async function GET() {
+  try {
+    const currentUser = await getCurrentUser();
+
+    const users = await prisma.user.findMany({
+      where: {
+        status: "ACTIVE",
+      },
+      select: {
+        id: true,
+        username: true,
+        totalPoints: true,
+        totalPointsReachedAt: true,
+        currentStreak: true,
+      },
+      orderBy: [
+        {
+          totalPoints: "desc",
+        },
+        {
+          totalPointsReachedAt: "asc",
+        },
+        {
+          username: "asc",
+        },
+      ],
+    });
+
+    const globalLeaderboard = users.map((user, index) => ({
+      rank: index + 1,
+      id: user.id,
+      username: user.username,
+      totalPoints: user.totalPoints,
+      dailyStreak: user.currentStreak,
+    }));
+
+    const weeklyStart = getStartOfWeekInLagos();
+
+    const weeklyGames = await prisma.gameSession.findMany({
+      where: {
+        status: "COMPLETED",
+        completedAt: {
+          gte: weeklyStart,
+        },
+        user: {
+          status: "ACTIVE",
+        },
+      },
+      select: {
+        userId: true,
+        score: true,
+        user: {
+          select: {
+            id: true,
+            username: true,
+            currentStreak: true,
+          },
+        },
+      },
+    });
+
+    const weeklyMap = new Map<
+      string,
+      {
+        id: string;
+        username: string;
+        points: number;
+        dailyStreak: number;
+      }
+    >();
+
+    for (const game of weeklyGames) {
+      const existing = weeklyMap.get(game.userId);
+
+      if (existing) {
+        existing.points += game.score;
+      } else {
+        weeklyMap.set(game.userId, {
+          id: game.user.id,
+          username: game.user.username,
+          points: game.score,
+          dailyStreak: game.user.currentStreak,
+        });
+      }
+    }
+
+    const weeklyLeaderboard = Array.from(
+      weeklyMap.values(),
+    )
+      .sort((a, b) => {
+        if (b.points !== a.points) {
+          return b.points - a.points;
+        }
+
+        return a.username.localeCompare(b.username);
+      })
+      .slice(0, 3)
+      .map((player, index) => ({
+        rank: index + 1,
+        id: player.id,
+        username: player.username,
+        totalPoints: player.points,
+        dailyStreak: player.dailyStreak,
+      }));
+
+    const currentUserEntry = currentUser
+      ? globalLeaderboard.find(
+          (player) => player.id === currentUser.id,
+        ) ?? null
+      : null;
+
+    return NextResponse.json({
+      weekly: weeklyLeaderboard,
+      global: globalLeaderboard,
+      currentUser: currentUserEntry,
+      totalPlayers: globalLeaderboard.length,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Leaderboard error:", error);
+
+    return NextResponse.json(
+      {
+        error: "Unable to load leaderboard.",
+      },
+      {
+        status: 500,
+      },
+    );
+  }
+}
+
+===== prisma/schema.prisma =====
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum QuestionDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum QuestionStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum GameStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+enum AnswerResult {
+  CORRECT
+  INCORRECT
+  TIMEOUT
+}
+
+enum BadgeType {
+  FIRST_GAME
+  QUESTIONS_50
+  QUESTIONS_100
+  STREAK_7
+  STREAK_14
+  STREAK_30
+  STREAK_60
+  STREAK_90
+  TOP_10
+  PERFECT_ROUND
+  CORRECT_500
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+}
+
+enum AdminStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum NotificationType {
+  NEW_USER
+  LEADERBOARD_TOPPED
+  LEADERBOARD_MOVEMENT
+  QUESTION_IMPORT
+  USER_SUSPENDED
+  SYSTEM
+}
+
+enum ChallengeStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum ChallengeParticipationStatus {
+  JOINED
+  COMPLETED
+  ABANDONED
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum WinnerSelectionType {
+  LEADERBOARD
+  RAFFLE
+}
+
+enum OtpPurpose {
+  REGISTRATION
+  LOGIN
+}
+
+// ─────────────────────────────────────────────
+// USERS
+// ─────────────────────────────────────────────
+
+model User {
+  id                String     @id @default(uuid())
+  username          String     @unique
+  phone             String     @unique
+  status            UserStatus @default(ACTIVE)
+
+  totalPoints       Int        @default(0)
+  totalPointsReachedAt DateTime   @default(now())
+  gamesPlayed       Int        @default(0)
+  questionsAnswered Int        @default(0)
+  correctAnswers    Int        @default(0)
+
+  currentStreak     Int        @default(0)
+  longestStreak     Int        @default(0)
+
+  lastPlayedDate    DateTime?
+
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  games                     GameSession[]
+  answers                   GameAnswer[]
+  streakRecords             StreakRecord[]
+  badges                    UserBadge[]
+  otpCodes                  OtpCode[]
+  sessions                  UserSession[]
+  notifications             AdminNotification[] @relation("UserNotification")
+  challengeParticipations  ChallengeParticipation[]
+  raffleEntries             RaffleEntry[]
+  winnerSelections          WinnerSelection[]
+
+  @@index([status])
+  @@index([totalPoints])
+  @@index([currentStreak])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────
+// QUESTIONS
+// ─────────────────────────────────────────────
+
+model Question {
+  id            String             @id @default(uuid())
+  question      String
+  optionA       String
+  optionB       String
+  optionC       String
+  optionD       String
+  correctOption String
+  category      TriviaCategory
+  difficulty    QuestionDifficulty @default(MEDIUM)
+  status        QuestionStatus     @default(ACTIVE)
+
+  // MVP remains 1 point per correct answer.
+  // Kept configurable at question level for future expansion.
+  points        Int                @default(1)
+
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  gameQuestions GameQuestion[]
+
+  @@index([category])
+  @@index([difficulty])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────
+// GAME SESSIONS
+// ─────────────────────────────────────────────
+
+model GameSession {
+  id                  String     @id @default(uuid())
+  userId              String
+
+  status              GameStatus @default(IN_PROGRESS)
+
+  totalQuestions      Int        @default(10)
+  totalTimeSeconds    Int
+  questionTimeSeconds Int
+
+  score               Int        @default(0)
+  correctAnswers      Int        @default(0)
+  incorrectAnswers    Int        @default(0)
+  questionsAnswered   Int        @default(0)
+
+  startedAt           DateTime   @default(now())
+  completedAt         DateTime?
+  durationSeconds     Int?
+
+  // Used for leaderboard tie-breaking.
+  scoreReachedAt      DateTime?
+
+  user                User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions           GameQuestion[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([completedAt])
+  @@index([scoreReachedAt])
+}
+
+// ─────────────────────────────────────────────
+// QUESTIONS USED IN A GAME
+// Snapshotting protects historical games when
+// an admin later edits a question.
+// ─────────────────────────────────────────────
+
+model GameQuestion {
+  id              String       @id @default(uuid())
+  gameSessionId   String
+  questionId      String
+
+  questionNumber  Int
+
+  questionText    String
+  optionA         String
+  optionB         String
+  optionC         String
+  optionD         String
+  correctOption   String
+
+  pointsAvailable Int          @default(1)
+
+  answered        Boolean      @default(false)
+  answeredAt      DateTime?
+  startedAt       DateTime?
+
+  gameSession     GameSession  @relation(fields: [gameSessionId], references: [id], onDelete: Cascade)
+  question        Question     @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  answer          GameAnswer?
+
+  @@unique([gameSessionId, questionNumber])
+  @@index([gameSessionId])
+  @@index([questionId])
+}
+
+// ─────────────────────────────────────────────
+// PLAYER ANSWERS
+// ─────────────────────────────────────────────
+
+model GameAnswer {
+  id              String       @id @default(uuid())
+
+  userId          String
+  gameQuestionId  String
+
+  selectedOption  String?
+  result          AnswerResult
+  pointsEarned    Int          @default(0)
+
+  responseTimeMs  Int?
+  answeredAt      DateTime     @default(now())
+
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameQuestion    GameQuestion @relation(fields: [gameQuestionId], references: [id], onDelete: Cascade)
+
+  @@unique([gameQuestionId])
+  @@index([userId])
+  @@index([result])
+  @@index([answeredAt])
+}
+
+// ─────────────────────────────────────────────
+// DAILY STREAK HISTORY
+// ─────────────────────────────────────────────
+
+model StreakRecord {
+  id            String   @id @default(uuid())
+  userId        String
+
+  streakDate    DateTime
+  streakValue   Int
+
+  completedGame Boolean  @default(false)
+
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, streakDate])
+  @@index([userId])
+  @@index([streakDate])
+}
+
+// ─────────────────────────────────────────────
+// BADGES
+// ─────────────────────────────────────────────
+
+model Badge {
+  id          String     @id @default(uuid())
+  type        BadgeType  @unique
+  name        String
+  description String
+
+  createdAt   DateTime   @default(now())
+
+  users       UserBadge[]
+}
+
+model UserBadge {
+  id        String   @id @default(uuid())
+  userId    String
+  badgeId   String
+
+  earnedAt  DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────
+// OTP AUTHENTICATION
+// ─────────────────────────────────────────────
+
+model OtpCode {
+  id              String     @id @default(uuid())
+  userId          String?
+  phone           String
+
+  // Temporary username stored while registration
+  // is waiting for successful OTP verification.
+  pendingUsername String?
+
+  codeHash        String
+  purpose         OtpPurpose
+
+  expiresAt       DateTime
+  verifiedAt      DateTime?
+  attempts        Int        @default(0)
+
+  createdAt       DateTime   @default(now())
+
+  user            User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([phone])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────
+// USER SESSIONS
+// ─────────────────────────────────────────────
+
+model UserSession {
+  id          String   @id @default(uuid())
+  userId      String
+
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  lastUsedAt  DateTime   @default(now())
+
+  createdAt   DateTime   @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────
+// ADMIN USERS
+// ─────────────────────────────────────────────
+
+model AdminUser {
+  id                String      @id @default(uuid())
+  name              String
+  email             String      @unique
+
+  passwordHash      String
+
+  role              AdminRole   @default(ADMIN)
+  status            AdminStatus @default(ACTIVE)
+
+  twoFactorEnabled  Boolean     @default(false)
+
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  lastLoginAt       DateTime?
+
+  sessions          AdminSession[]
+  notifications     AdminNotification[] @relation("AdminNotification")
+  auditLogs         AdminAuditLog[]
+
+  @@index([status])
+  @@index([role])
+}
+
+// ─────────────────────────────────────────────
+// ADMIN SESSIONS
+// ─────────────────────────────────────────────
+
+model AdminSession {
+  id          String     @id @default(uuid())
+  adminId     String
+
+  tokenHash   String     @unique
+  expiresAt   DateTime
+  lastUsedAt  DateTime   @default(now())
+
+  createdAt   DateTime   @default(now())
+
+  admin       AdminUser  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────
+// ADMIN NOTIFICATIONS
+// ─────────────────────────────────────────────
+
+model AdminNotification {
+  id          String             @id @default(uuid())
+
+  type        NotificationType
+  title       String
+  message     String
+
+  isRead      Boolean            @default(false)
+
+  userId      String?
+  adminId     String?
+
+  createdAt   DateTime           @default(now())
+  readAt      DateTime?
+
+  user        User?              @relation("UserNotification", fields: [userId], references: [id], onDelete: SetNull)
+  admin       AdminUser?         @relation("AdminNotification", fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([adminId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────
+// ADMIN AUDIT LOG
+// ─────────────────────────────────────────────
+
+model AdminAuditLog {
+  id          String    @id @default(uuid())
+  adminId     String?
+
+  action      String
+  entity      String
+  entityId    String?
+  details     Json?
+
+  createdAt   DateTime  @default(now())
+
+  admin       AdminUser? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([adminId])
+  @@index([entity])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────
+// COMMUNITY CHALLENGES
+// ─────────────────────────────────────────────
+
+model CommunityChallenge {
+  id          String          @id @default(uuid())
+
+  title       String
+  description String
+
+  bonusPoints Int             @default(5)
+
+  startsAt    DateTime
+  endsAt      DateTime
+
+  status      ChallengeStatus @default(DRAFT)
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  participants ChallengeParticipation[]
+
+  @@index([status])
+  @@index([startsAt])
+  @@index([endsAt])
+}
+
+model ChallengeParticipation {
+  id          String                       @id @default(uuid())
+
+  challengeId String
+  userId      String
+
+  status      ChallengeParticipationStatus @default(JOINED)
+
+  joinedAt    DateTime                     @default(now())
+  completedAt DateTime?
+
+  challenge   CommunityChallenge           @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user        User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([challengeId, userId])
+  @@index([challengeId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────
+// FUTURE CAMPAIGNS / WINNER SYSTEM
+// ─────────────────────────────────────────────
+
+model Campaign {
+  id               String         @id @default(uuid())
+
+  name             String
+  description      String?
+
+  status           CampaignStatus @default(DRAFT)
+
+  startsAt         DateTime
+  endsAt           DateTime
+
+  leaderboardSlots Int            @default(30)
+  raffleSlots      Int            @default(10)
+  requiredStreak   Int            @default(30)
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  winners          WinnerSelection[]
+  raffleEntries    RaffleEntry[]
+
+  @@index([status])
+  @@index([startsAt])
+  @@index([endsAt])
+}
+
+model RaffleEntry {
+  id             String    @id @default(uuid())
+
+  campaignId     String
+  userId         String
+
+  eligible       Boolean   @default(false)
+  eligibleStreak Int?
+
+  createdAt      DateTime  @default(now())
+
+  campaign       Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId])
+  @@index([campaignId])
+  @@index([userId])
+  @@index([eligible])
+}
+
+model WinnerSelection {
+  id            String             @id @default(uuid())
+
+  campaignId    String
+  userId        String
+
+  selectionType WinnerSelectionType
+  rankPosition  Int?
+
+  selectedAt    DateTime           @default(now())
+
+  campaign      Campaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId])
+  @@index([campaignId])
+  @@index([selectionType])
+}
+
+// ─────────────────────────────────────────────
+// FIXED TINKHUB CATEGORIES
+// ─────────────────────────────────────────────
+
+enum TriviaCategory {
+  GENERAL_KNOWLEDGE
+  SCIENCE
+  HISTORY
+  SPORTS
+  GEOGRAPHY
+  ENTERTAINMENT
+  TECHNOLOGY
+  BUSINESS
+  CURRENT_AFFAIRS
+}
+
+// ─────────────────────────────────────────────
+// GAME SETTINGS
+// ─────────────────────────────────────────────
+
+model GameSettings {
+  id                    String   @id @default(uuid())
+
+  questionsPerSession   Int      @default(10)
+
+  // TOTAL session time.
+  // The game engine divides this equally across
+  // the questions in the session.
+  totalTimeSeconds      Int      @default(600)
+
+  pointsPerCorrectAnswer Int      @default(1)
+
+  randomizeQuestions    Boolean  @default(true)
+
+  streakTimezone        String   @default("Africa/Lagos")
+
+  updatedAt             DateTime @updatedAt
+}
