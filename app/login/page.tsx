@@ -45,11 +45,8 @@ export default function LoginPage() {
       const params = new URLSearchParams(window.location.search);
       const returnTo = getSafeReturnTo(params.get("returnTo"));
 
-      router.push(
-        `/login/verify?phone=${encodeURIComponent(
-          data.data.phone,
-        )}&returnTo=${encodeURIComponent(returnTo)}`,
-      );
+      router.push(returnTo);
+      router.refresh();
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -81,8 +78,8 @@ export default function LoginPage() {
               </h1>
 
               <p className="mx-auto mt-3 max-w-[390px] text-[12px] leading-6 text-[#6f7278] dark:text-[#b9aaa2]">
-                Enter the phone number linked to your TinkHubb account.
-                We&apos;ll send you a verification code to continue.
+                Enter the phone number linked to your TinkHubb account to
+                continue.
               </p>
             </div>
 
@@ -129,7 +126,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="mt-8 h-[48px] w-full rounded-[7px] bg-[#FF6B00] text-[11px] font-extrabold uppercase tracking-[0.08em] text-white shadow-[0_8px_20px_rgba(255,107,0,0.14)] transition-all hover:-translate-y-0.5 hover:bg-[#e95f00] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? "Sending Code..." : "Continue"}
+                {loading ? "Signing In..." : "Continue"}
               </button>
 
               <p className="mt-6 text-center text-[11px] text-[#6f7278] dark:text-[#a99b93]">

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
-import { randomInt } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { createUserSession } from "@/lib/auth/session";
 import { normalizePhone } from "@/lib/validation/auth";
 
 export async function POST(request: Request) {
@@ -74,34 +73,13 @@ export async function POST(request: Request) {
       );
     }
 
-    await prisma.otpCode.deleteMany({
-      where: {
-        phone,
-        purpose: "LOGIN",
-        verifiedAt: null,
-      },
-    });
-
-    const otp = randomInt(100000, 1000000).toString();
-    const codeHash = await bcrypt.hash(otp, 10);
-
-    await prisma.otpCode.create({
-      data: {
-        userId: user.id,
-        phone,
-        codeHash,
-        purpose: "LOGIN",
-        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-      },
-    });
-
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`\n[TINKHUBB DEV LOGIN OTP] ${phone} → ${otp}\n`);
-    }
+    // OTP verification is temporarily disabled for returning users.
+    // Create the normal authenticated session immediately.
+    await createUserSession(user.id);
 
     return NextResponse.json({
       success: true,
-      message: "Verification code sent.",
+      message: "Signed in successfully.",
       data: {
         phone,
         username: user.username,
