@@ -70,7 +70,19 @@ enum NotificationType {
   LEADERBOARD_MOVEMENT
   QUESTION_IMPORT
   USER_SUSPENDED
+  STREAK_MILESTONE
+  ADMIN_TEAM_ACTIVITY
+  SUSPICIOUS_ACTIVITY
   SYSTEM
+}
+
+model AdminWeeklySummary {
+  id        String   @id @default(uuid())
+  weekStart DateTime @unique
+  weekEnd   DateTime
+  createdAt DateTime @default(now())
+
+  @@index([weekStart])
 }
 
 enum ChallengeStatus {
@@ -98,45 +110,39 @@ enum WinnerSelectionType {
   RAFFLE
 }
 
-enum OtpPurpose {
-  REGISTRATION
-  LOGIN
-}
-
 // ─────────────────────────────────────────────
 // USERS
 // ─────────────────────────────────────────────
 
 model User {
-  id                String     @id @default(uuid())
-  username          String     @unique
-  phone             String     @unique
-  status            UserStatus @default(ACTIVE)
+  id       String     @id @default(uuid())
+  username String     @unique
+  phone    String     @unique
+  status   UserStatus @default(ACTIVE)
 
-  totalPoints       Int        @default(0)
-  totalPointsReachedAt DateTime   @default(now())
-  gamesPlayed       Int        @default(0)
-  questionsAnswered Int        @default(0)
-  correctAnswers    Int        @default(0)
+  totalPoints          Int      @default(0)
+  totalPointsReachedAt DateTime @default(now())
+  gamesPlayed          Int      @default(0)
+  questionsAnswered    Int      @default(0)
+  correctAnswers       Int      @default(0)
 
-  currentStreak     Int        @default(0)
-  longestStreak     Int        @default(0)
+  currentStreak Int @default(0)
+  longestStreak Int @default(0)
 
-  lastPlayedDate    DateTime?
+  lastPlayedDate DateTime?
 
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  games                     GameSession[]
-  answers                   GameAnswer[]
-  streakRecords             StreakRecord[]
-  badges                    UserBadge[]
-  otpCodes                  OtpCode[]
-  sessions                  UserSession[]
-  notifications             AdminNotification[] @relation("UserNotification")
-  challengeParticipations  ChallengeParticipation[]
-  raffleEntries             RaffleEntry[]
-  winnerSelections          WinnerSelection[]
+  games                   GameSession[]
+  answers                 GameAnswer[]
+  streakRecords           StreakRecord[]
+  badges                  UserBadge[]
+  sessions                UserSession[]
+  notifications           AdminNotification[]      @relation("UserNotification")
+  challengeParticipations ChallengeParticipation[]
+  raffleEntries           RaffleEntry[]
+  winnerSelections        WinnerSelection[]
 
   @@index([status])
   @@index([totalPoints])
@@ -162,10 +168,10 @@ model Question {
 
   // MVP remains 1 point per correct answer.
   // Kept configurable at question level for future expansion.
-  points        Int                @default(1)
+  points Int @default(1)
 
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   gameQuestions GameQuestion[]
 
@@ -180,29 +186,29 @@ model Question {
 // ─────────────────────────────────────────────
 
 model GameSession {
-  id                  String     @id @default(uuid())
-  userId              String
+  id     String @id @default(uuid())
+  userId String
 
-  status              GameStatus @default(IN_PROGRESS)
+  status GameStatus @default(IN_PROGRESS)
 
-  totalQuestions      Int        @default(10)
+  totalQuestions      Int @default(10)
   totalTimeSeconds    Int
   questionTimeSeconds Int
 
-  score               Int        @default(0)
-  correctAnswers      Int        @default(0)
-  incorrectAnswers    Int        @default(0)
-  questionsAnswered   Int        @default(0)
+  score             Int @default(0)
+  correctAnswers    Int @default(0)
+  incorrectAnswers  Int @default(0)
+  questionsAnswered Int @default(0)
 
-  startedAt           DateTime   @default(now())
-  completedAt         DateTime?
-  durationSeconds     Int?
+  startedAt       DateTime  @default(now())
+  completedAt     DateTime?
+  durationSeconds Int?
 
   // Used for leaderboard tie-breaking.
-  scoreReachedAt      DateTime?
+  scoreReachedAt DateTime?
 
-  user                User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  questions           GameQuestion[]
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions GameQuestion[]
 
   @@index([userId])
   @@index([status])
@@ -217,28 +223,28 @@ model GameSession {
 // ─────────────────────────────────────────────
 
 model GameQuestion {
-  id              String       @id @default(uuid())
-  gameSessionId   String
-  questionId      String
+  id            String @id @default(uuid())
+  gameSessionId String
+  questionId    String
 
-  questionNumber  Int
+  questionNumber Int
 
-  questionText    String
-  optionA         String
-  optionB         String
-  optionC         String
-  optionD         String
-  correctOption   String
+  questionText  String
+  optionA       String
+  optionB       String
+  optionC       String
+  optionD       String
+  correctOption String
 
-  pointsAvailable Int          @default(1)
+  pointsAvailable Int @default(1)
 
-  answered        Boolean      @default(false)
-  answeredAt      DateTime?
-  startedAt       DateTime?
+  answered   Boolean   @default(false)
+  answeredAt DateTime?
+  startedAt  DateTime?
 
-  gameSession     GameSession  @relation(fields: [gameSessionId], references: [id], onDelete: Cascade)
-  question        Question     @relation(fields: [questionId], references: [id], onDelete: Restrict)
-  answer          GameAnswer?
+  gameSession GameSession @relation(fields: [gameSessionId], references: [id], onDelete: Cascade)
+  question    Question    @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  answer      GameAnswer?
 
   @@unique([gameSessionId, questionNumber])
   @@index([gameSessionId])
@@ -250,20 +256,20 @@ model GameQuestion {
 // ─────────────────────────────────────────────
 
 model GameAnswer {
-  id              String       @id @default(uuid())
+  id String @id @default(uuid())
 
-  userId          String
-  gameQuestionId  String
+  userId         String
+  gameQuestionId String
 
-  selectedOption  String?
-  result          AnswerResult
-  pointsEarned    Int          @default(0)
+  selectedOption String?
+  result         AnswerResult
+  pointsEarned   Int          @default(0)
 
-  responseTimeMs  Int?
-  answeredAt      DateTime     @default(now())
+  responseTimeMs Int?
+  answeredAt     DateTime @default(now())
 
-  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  gameQuestion    GameQuestion @relation(fields: [gameQuestionId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameQuestion GameQuestion @relation(fields: [gameQuestionId], references: [id], onDelete: Cascade)
 
   @@unique([gameQuestionId])
   @@index([userId])
@@ -276,17 +282,17 @@ model GameAnswer {
 // ─────────────────────────────────────────────
 
 model StreakRecord {
-  id            String   @id @default(uuid())
-  userId        String
+  id     String @id @default(uuid())
+  userId String
 
-  streakDate    DateTime
-  streakValue   Int
+  streakDate  DateTime
+  streakValue Int
 
-  completedGame Boolean  @default(false)
+  completedGame Boolean @default(false)
 
-  createdAt     DateTime @default(now())
+  createdAt DateTime @default(now())
 
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, streakDate])
   @@index([userId])
@@ -298,56 +304,28 @@ model StreakRecord {
 // ─────────────────────────────────────────────
 
 model Badge {
-  id          String     @id @default(uuid())
-  type        BadgeType  @unique
+  id          String    @id @default(uuid())
+  type        BadgeType @unique
   name        String
   description String
 
-  createdAt   DateTime   @default(now())
+  createdAt DateTime @default(now())
 
-  users       UserBadge[]
+  users UserBadge[]
 }
 
 model UserBadge {
-  id        String   @id @default(uuid())
-  userId    String
-  badgeId   String
+  id      String @id @default(uuid())
+  userId  String
+  badgeId String
 
-  earnedAt  DateTime @default(now())
+  earnedAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge Badge @relation(fields: [badgeId], references: [id], onDelete: Cascade)
 
   @@unique([userId, badgeId])
   @@index([userId])
-}
-
-// ─────────────────────────────────────────────
-// OTP AUTHENTICATION
-// ─────────────────────────────────────────────
-
-model OtpCode {
-  id              String     @id @default(uuid())
-  userId          String?
-  phone           String
-
-  // Temporary username stored while registration
-  // is waiting for successful OTP verification.
-  pendingUsername String?
-
-  codeHash        String
-  purpose         OtpPurpose
-
-  expiresAt       DateTime
-  verifiedAt      DateTime?
-  attempts        Int        @default(0)
-
-  createdAt       DateTime   @default(now())
-
-  user            User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([phone])
-  @@index([expiresAt])
 }
 
 // ─────────────────────────────────────────────
@@ -355,16 +333,16 @@ model OtpCode {
 // ─────────────────────────────────────────────
 
 model UserSession {
-  id          String   @id @default(uuid())
-  userId      String
+  id     String @id @default(uuid())
+  userId String
 
-  tokenHash   String   @unique
-  expiresAt   DateTime
-  lastUsedAt  DateTime   @default(now())
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  lastUsedAt DateTime @default(now())
 
-  createdAt   DateTime   @default(now())
+  createdAt DateTime @default(now())
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
@@ -375,24 +353,30 @@ model UserSession {
 // ─────────────────────────────────────────────
 
 model AdminUser {
-  id                String      @id @default(uuid())
-  name              String
-  email             String      @unique
+  id          String  @id @default(uuid())
+  name        String
+  email       String  @unique
+  phoneNumber String? @unique
 
-  passwordHash      String
+  passwordHash String
 
-  role              AdminRole   @default(ADMIN)
-  status            AdminStatus @default(ACTIVE)
+  role   AdminRole   @default(ADMIN)
+  status AdminStatus @default(ACTIVE)
 
-  twoFactorEnabled  Boolean     @default(false)
+  twoFactorEnabled         Boolean @default(false)
+  notifySuspiciousActivity Boolean @default(true)
+  notifyWeeklySummary      Boolean @default(true)
+  notifyStreakMilestones   Boolean @default(true)
+  notifyAdminActivity      Boolean @default(true)
 
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-  lastLoginAt       DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastLoginAt DateTime?
 
-  sessions          AdminSession[]
-  notifications     AdminNotification[] @relation("AdminNotification")
-  auditLogs         AdminAuditLog[]
+  sessions      AdminSession[]
+  notifications AdminNotification[] @relation("AdminNotification")
+  auditLogs     AdminAuditLog[]
+  invites       AdminInvite[]
 
   @@index([status])
   @@index([role])
@@ -403,16 +387,16 @@ model AdminUser {
 // ─────────────────────────────────────────────
 
 model AdminSession {
-  id          String     @id @default(uuid())
-  adminId     String
+  id      String @id @default(uuid())
+  adminId String
 
-  tokenHash   String     @unique
-  expiresAt   DateTime
-  lastUsedAt  DateTime   @default(now())
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  lastUsedAt DateTime @default(now())
 
-  createdAt   DateTime   @default(now())
+  createdAt DateTime @default(now())
 
-  admin       AdminUser  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  admin AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId])
   @@index([expiresAt])
@@ -423,22 +407,22 @@ model AdminSession {
 // ─────────────────────────────────────────────
 
 model AdminNotification {
-  id          String             @id @default(uuid())
+  id String @id @default(uuid())
 
-  type        NotificationType
-  title       String
-  message     String
+  type    NotificationType
+  title   String
+  message String
 
-  isRead      Boolean            @default(false)
+  isRead Boolean @default(false)
 
-  userId      String?
-  adminId     String?
+  userId  String?
+  adminId String?
 
-  createdAt   DateTime           @default(now())
-  readAt      DateTime?
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
 
-  user        User?              @relation("UserNotification", fields: [userId], references: [id], onDelete: SetNull)
-  admin       AdminUser?         @relation("AdminNotification", fields: [adminId], references: [id], onDelete: SetNull)
+  user  User?      @relation("UserNotification", fields: [userId], references: [id], onDelete: SetNull)
+  admin AdminUser? @relation("AdminNotification", fields: [adminId], references: [id], onDelete: SetNull)
 
   @@index([adminId])
   @@index([isRead])
@@ -450,17 +434,17 @@ model AdminNotification {
 // ─────────────────────────────────────────────
 
 model AdminAuditLog {
-  id          String    @id @default(uuid())
-  adminId     String?
+  id      String  @id @default(uuid())
+  adminId String?
 
-  action      String
-  entity      String
-  entityId    String?
-  details     Json?
+  action   String
+  entity   String
+  entityId String?
+  details  Json?
 
-  createdAt   DateTime  @default(now())
+  createdAt DateTime @default(now())
 
-  admin       AdminUser? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  admin AdminUser? @relation(fields: [adminId], references: [id], onDelete: SetNull)
 
   @@index([adminId])
   @@index([entity])
@@ -468,24 +452,51 @@ model AdminAuditLog {
 }
 
 // ─────────────────────────────────────────────
+// ADMIN INVITES
+// ─────────────────────────────────────────────
+
+model AdminInvite {
+  id String @id @default(uuid())
+
+  name  String
+  email String
+  role  AdminRole
+
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+
+  invitedById String
+  invitedBy   AdminUser @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([expiresAt])
+  @@index([acceptedAt])
+  @@index([invitedById])
+}
+
+// ─────────────────────────────────────────────
 // COMMUNITY CHALLENGES
 // ─────────────────────────────────────────────
 
 model CommunityChallenge {
-  id          String          @id @default(uuid())
+  id String @id @default(uuid())
 
   title       String
   description String
 
-  bonusPoints Int             @default(5)
+  bonusPoints Int @default(5)
 
-  startsAt    DateTime
-  endsAt      DateTime
+  startsAt DateTime
+  endsAt   DateTime
 
-  status      ChallengeStatus @default(DRAFT)
+  status ChallengeStatus @default(DRAFT)
 
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   participants ChallengeParticipation[]
 
@@ -495,18 +506,18 @@ model CommunityChallenge {
 }
 
 model ChallengeParticipation {
-  id          String                       @id @default(uuid())
+  id String @id @default(uuid())
 
   challengeId String
   userId      String
 
-  status      ChallengeParticipationStatus @default(JOINED)
+  status ChallengeParticipationStatus @default(JOINED)
 
-  joinedAt    DateTime                     @default(now())
+  joinedAt    DateTime  @default(now())
   completedAt DateTime?
 
-  challenge   CommunityChallenge           @relation(fields: [challengeId], references: [id], onDelete: Cascade)
-  user        User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge CommunityChallenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([challengeId, userId])
   @@index([challengeId])
@@ -518,25 +529,25 @@ model ChallengeParticipation {
 // ─────────────────────────────────────────────
 
 model Campaign {
-  id               String         @id @default(uuid())
+  id String @id @default(uuid())
 
-  name             String
-  description      String?
+  name        String
+  description String?
 
-  status           CampaignStatus @default(DRAFT)
+  status CampaignStatus @default(DRAFT)
 
-  startsAt         DateTime
-  endsAt           DateTime
+  startsAt DateTime
+  endsAt   DateTime
 
-  leaderboardSlots Int            @default(30)
-  raffleSlots      Int            @default(10)
-  requiredStreak   Int            @default(30)
+  leaderboardSlots Int @default(30)
+  raffleSlots      Int @default(10)
+  requiredStreak   Int @default(30)
 
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  winners          WinnerSelection[]
-  raffleEntries    RaffleEntry[]
+  winners       WinnerSelection[]
+  raffleEntries RaffleEntry[]
 
   @@index([status])
   @@index([startsAt])
@@ -544,18 +555,18 @@ model Campaign {
 }
 
 model RaffleEntry {
-  id             String    @id @default(uuid())
+  id String @id @default(uuid())
 
-  campaignId     String
-  userId         String
+  campaignId String
+  userId     String
 
-  eligible       Boolean   @default(false)
+  eligible       Boolean @default(false)
   eligibleStreak Int?
 
-  createdAt      DateTime  @default(now())
+  createdAt DateTime @default(now())
 
-  campaign       Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([campaignId, userId])
   @@index([campaignId])
@@ -564,18 +575,18 @@ model RaffleEntry {
 }
 
 model WinnerSelection {
-  id            String             @id @default(uuid())
+  id String @id @default(uuid())
 
-  campaignId    String
-  userId        String
+  campaignId String
+  userId     String
 
   selectionType WinnerSelectionType
   rankPosition  Int?
 
-  selectedAt    DateTime           @default(now())
+  selectedAt DateTime @default(now())
 
-  campaign      Campaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([campaignId, userId])
   @@index([campaignId])
@@ -603,20 +614,20 @@ enum TriviaCategory {
 // ─────────────────────────────────────────────
 
 model GameSettings {
-  id                    String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  questionsPerSession   Int      @default(10)
+  questionsPerSession Int @default(10)
 
   // TOTAL session time.
   // The game engine divides this equally across
   // the questions in the session.
-  totalTimeSeconds      Int      @default(600)
+  totalTimeSeconds Int @default(600)
 
-  pointsPerCorrectAnswer Int      @default(1)
+  pointsPerCorrectAnswer Int @default(1)
 
-  randomizeQuestions    Boolean  @default(true)
+  randomizeQuestions Boolean @default(true)
 
-  streakTimezone        String   @default("Africa/Lagos")
+  streakTimezone String @default("Africa/Lagos")
 
-  updatedAt             DateTime @updatedAt
+  updatedAt DateTime @updatedAt
 }

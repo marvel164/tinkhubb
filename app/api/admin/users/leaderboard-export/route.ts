@@ -55,11 +55,11 @@ export async function GET() {
 
     const pdfDoc = await PDFDocument.create();
 
-    pdfDoc.setTitle("TinkHubb Leaderboard");
-    pdfDoc.setAuthor("TinkHubb Admin");
-    pdfDoc.setSubject("TinkHubb Trivia leaderboard export");
-    pdfDoc.setCreator("TinkHubb");
-    pdfDoc.setProducer("TinkHubb");
+    pdfDoc.setTitle("Tinkhupp Leaderboard");
+    pdfDoc.setAuthor("Tinkhupp Admin");
+    pdfDoc.setSubject("Tinkhupp Trivia leaderboard export");
+    pdfDoc.setCreator("Tinkhupp");
+    pdfDoc.setProducer("Tinkhupp");
 
     const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
@@ -123,7 +123,7 @@ export async function GET() {
     if (users.length === 0) {
       const page = pdfDoc.addPage([pageWidth, pageHeight]);
 
-      page.drawText("TinkHubb", {
+      page.drawText("Tinkhupp", {
         x: leftMargin,
         y: pageHeight - 58,
         size: 23,
@@ -161,7 +161,7 @@ export async function GET() {
          * HEADER
          */
 
-        page.drawText("TinkHubb", {
+        page.drawText("Tinkhupp", {
           x: leftMargin,
           y: pageHeight - 58,
           size: 23,
@@ -185,7 +185,7 @@ export async function GET() {
           color: dark,
         });
 
-        page.drawText("Current TinkHubb trivia leaderboard", {
+        page.drawText("Current Tinkhupp trivia leaderboard", {
           x: leftMargin,
           y: pageHeight - 111,
           size: 9.5,
@@ -451,7 +451,7 @@ export async function GET() {
           color: lightGray,
         });
 
-        page.drawText("TinkHubb Trivia - Admin Leaderboard Export", {
+        page.drawText("Tinkhupp Trivia - Admin Leaderboard Export", {
           x: leftMargin,
           y: footerY + 7,
           size: 7.5,
@@ -471,7 +471,7 @@ export async function GET() {
 
     const pdfBytes = await pdfDoc.save();
 
-    const filename = `tinkhubb-leaderboard-${new Date()
+    const filename = `tinkhupp-leaderboard-${new Date()
       .toISOString()
       .slice(0, 10)}.pdf`;
 

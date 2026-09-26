@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAdmin } from "@/lib/auth/admin/session";
+import { createAdminNotification } from "@/lib/notifications/admin";
 
 const paramsSchema = z.object({
   userId: z.string().min(1),
@@ -19,10 +20,7 @@ export async function PATCH(
     const admin = await getCurrentAdmin();
 
     if (!admin) {
-      return NextResponse.json(
-        { message: "Unauthorized." },
-        { status: 401 },
-      );
+      return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
     }
 
     const params = await context.params;
@@ -127,6 +125,15 @@ export async function PATCH(
         },
       },
     });
+
+    if (action === "SUSPEND") {
+      await createAdminNotification({
+        type: "USER_SUSPENDED",
+        title: "Player suspended",
+        message: `${user.username} has been suspended.`,
+        userId: user.id,
+      });
+    }
 
     return NextResponse.json({
       message:

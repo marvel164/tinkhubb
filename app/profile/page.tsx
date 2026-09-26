@@ -166,7 +166,7 @@ export default function ProfilePage() {
         <main className="flex min-h-[calc(100vh-72px)] items-center justify-center bg-[#fffaf6] px-5 dark:bg-[#17110e]">
           <div className="w-full max-w-[430px] rounded-[6px] border border-[#f1dfd1] bg-white p-8 text-center shadow-[0_12px_40px_rgba(69,25,0,0.06)] dark:border-[#382920] dark:bg-[#211914]">
             <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#ff6b00]">
-              TinkHubb
+              Tinkhupp
             </p>
 
             <h1 className="mt-3 text-2xl font-bold text-[#451900] dark:text-[#fff4ec]">

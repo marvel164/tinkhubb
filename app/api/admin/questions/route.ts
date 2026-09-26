@@ -3,20 +3,13 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { getCurrentAdmin } from "@/lib/auth/admin/session";
-
-const categoryValues = [
-  "GENERAL_KNOWLEDGE",
-  "SCIENCE",
-  "HISTORY",
-  "SPORTS",
-  "GEOGRAPHY",
-  "ENTERTAINMENT",
-  "TECHNOLOGY",
-  "BUSINESS",
-  "CURRENT_AFFAIRS",
-] as const;
-
-const difficultyValues = ["EASY", "MEDIUM", "HARD"] as const;
+import {
+  calculateQuestionTimer,
+  categoryValues,
+  difficultyValues,
+  hasDuplicateOptions,
+  normalizeQuestionText,
+} from "@/lib/admin/question-validation";
 
 const createQuestionSchema = z.object({
   question: z.string().trim().min(1).max(1000),
@@ -31,76 +24,148 @@ const createQuestionSchema = z.object({
   status: z.enum(["ACTIVE", "INACTIVE"]).default("ACTIVE"),
 });
 
+const questionSelect = {
+  id: true,
+  question: true,
+  optionA: true,
+  optionB: true,
+  optionC: true,
+  optionD: true,
+  correctOption: true,
+  category: true,
+  difficulty: true,
+  status: true,
+  points: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 export async function GET(request: Request) {
   const admin = await getCurrentAdmin();
 
   if (!admin) {
-    return NextResponse.json(
-      { message: "Unauthorized." },
-      { status: 401 },
-    );
+    return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
+  try {
+    const { searchParams } = new URL(request.url);
 
-  const search = searchParams.get("search")?.trim() ?? "";
-  const status = searchParams.get("status");
-  const sort = searchParams.get("sort") === "desc" ? "desc" : "asc";
+    const search = searchParams.get("search")?.trim() ?? "";
 
-  const questions = await prisma.question.findMany({
-    where: {
-      ...(search
-        ? {
-            question: {
-              contains: search,
-              mode: "insensitive",
-            },
-          }
-        : {}),
-      ...(status === "ACTIVE" || status === "INACTIVE"
-        ? {
-            status,
-          }
-        : {}),
-    },
-    orderBy: {
-      question: sort,
-    },
-    select: {
-      id: true,
-      question: true,
-      optionA: true,
-      optionB: true,
-      optionC: true,
-      optionD: true,
-      correctOption: true,
-      category: true,
-      difficulty: true,
-      status: true,
-      points: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
+    const status = searchParams.get("status");
+    const category = searchParams.get("category");
+    const difficulty = searchParams.get("difficulty");
 
-  return NextResponse.json({
-    success: true,
-    data: questions,
-  });
+    const sort = searchParams.get("sort") === "desc" ? "desc" : "asc";
+
+    const [questions, settings] = await Promise.all([
+      prisma.question.findMany({
+        where: {
+          ...(search
+            ? {
+                question: {
+                  contains: search,
+                  mode: "insensitive",
+                },
+              }
+            : {}),
+
+          ...(status === "ACTIVE" || status === "INACTIVE" ? { status } : {}),
+
+          ...(category &&
+          categoryValues.includes(category as (typeof categoryValues)[number])
+            ? {
+                category: category as (typeof categoryValues)[number],
+              }
+            : {}),
+
+          ...(difficulty &&
+          difficultyValues.includes(
+            difficulty as (typeof difficultyValues)[number],
+          )
+            ? {
+                difficulty: difficulty as (typeof difficultyValues)[number],
+              }
+            : {}),
+        },
+
+        orderBy: {
+          question: sort,
+        },
+
+        select: questionSelect,
+      }),
+
+      prisma.gameSettings.findFirst({
+        orderBy: {
+          updatedAt: "desc",
+        },
+      }),
+    ]);
+
+    const totalQuestions = questions.length;
+
+    const activeQuestions = questions.filter(
+      (question) => question.status === "ACTIVE",
+    ).length;
+
+    const inactiveQuestions = questions.filter(
+      (question) => question.status === "INACTIVE",
+    ).length;
+
+    const categories = new Set(questions.map((question) => question.category));
+
+    const totalTimeSeconds = settings?.totalTimeSeconds ?? 600;
+
+    const questionsPerSession = settings?.questionsPerSession ?? 10;
+
+    const timerSeconds = calculateQuestionTimer(
+      totalTimeSeconds,
+      questionsPerSession,
+    );
+
+    return NextResponse.json({
+      success: true,
+
+      data: questions,
+
+      timerSeconds,
+
+      stats: {
+        total: totalQuestions,
+        active: activeQuestions,
+        inactive: inactiveQuestions,
+        categories: categories.size,
+      },
+
+      gameSettings: {
+        totalTimeSeconds,
+        questionsPerSession,
+        timerSeconds,
+      },
+    });
+  } catch (error) {
+    console.error("Question GET error:", error);
+
+    return NextResponse.json(
+      {
+        message: "Unable to load questions.",
+      },
+      { status: 500 },
+    );
+  }
 }
 
 export async function POST(request: Request) {
   const admin = await getCurrentAdmin();
 
   if (!admin) {
-    return NextResponse.json(
-      { message: "Unauthorized." },
-      { status: 401 },
-    );
+    return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
   }
 
   try {
     const body = await request.json();
+
     const parsed = createQuestionSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -113,23 +178,60 @@ export async function POST(request: Request) {
       );
     }
 
-    const question = await prisma.question.create({
-      data: parsed.data,
+    const data = parsed.data;
+
+    const options = [data.optionA, data.optionB, data.optionC, data.optionD];
+
+    if (hasDuplicateOptions(options)) {
+      return NextResponse.json(
+        {
+          message: "Each answer option must be different.",
+          field: "options",
+        },
+        { status: 409 },
+      );
+    }
+
+    const normalizedQuestion = normalizeQuestionText(data.question);
+
+    const existingQuestions = await prisma.question.findMany({
       select: {
         id: true,
         question: true,
-        optionA: true,
-        optionB: true,
-        optionC: true,
-        optionD: true,
-        correctOption: true,
-        category: true,
-        difficulty: true,
-        status: true,
-        points: true,
-        createdAt: true,
-        updatedAt: true,
       },
+    });
+
+    const duplicate = existingQuestions.find(
+      (question) =>
+        normalizeQuestionText(question.question) === normalizedQuestion,
+    );
+
+    if (duplicate) {
+      return NextResponse.json(
+        {
+          message: "A question with this text already exists.",
+          field: "question",
+          code: "DUPLICATE_QUESTION",
+        },
+        { status: 409 },
+      );
+    }
+
+    const question = await prisma.question.create({
+      data: {
+        question: data.question,
+        optionA: data.optionA,
+        optionB: data.optionB,
+        optionC: data.optionC,
+        optionD: data.optionD,
+        correctOption: data.correctOption,
+        category: data.category,
+        difficulty: data.difficulty,
+        points: data.points,
+        status: data.status,
+      },
+
+      select: questionSelect,
     });
 
     await prisma.adminAuditLog.create({
@@ -140,6 +242,10 @@ export async function POST(request: Request) {
         entityId: question.id,
         details: {
           question: question.question,
+          category: question.category,
+          difficulty: question.difficulty,
+          status: question.status,
+          points: question.points,
         },
       },
     });
@@ -151,7 +257,9 @@ export async function POST(request: Request) {
       },
       { status: 201 },
     );
-  } catch {
+  } catch (error) {
+    console.error("Question POST error:", error);
+
     return NextResponse.json(
       {
         message: "Unable to create question.",

@@ -1,19 +1,8 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import {
-  AlertCircle,
-  Check,
-  Clock3,
-  Flame,
-  X,
-} from "lucide-react";
+import { AlertCircle, Check, Clock3, Flame, X, LogOut } from "lucide-react";
 
 type AnswerOption = {
   key: "A" | "B" | "C" | "D";
@@ -68,13 +57,13 @@ export default function GamePage() {
   const [game, setGame] = useState<GameData | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
 
-  const [selectedOption, setSelectedOption] =
-    useState<"A" | "B" | "C" | "D" | null>(null);
+  const [selectedOption, setSelectedOption] = useState<
+    "A" | "B" | "C" | "D" | null
+  >(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [loadingNextQuestion, setLoadingNextQuestion] =
-    useState(false);
+  const [loadingNextQuestion, setLoadingNextQuestion] = useState(false);
 
   const [error, setError] = useState("");
 
@@ -85,9 +74,24 @@ export default function GamePage() {
   const [pointsEarned, setPointsEarned] = useState(0);
 
   /*
+   * EXIT CONFIRMATION
+   */
+  const [showExitModal, setShowExitModal] = useState(false);
+
+  /*
+   * Destination for an in-app navigation attempt.
+   * Browser back uses an empty destination because
+   * history.back() is handled separately.
+   */
+  const pendingExitDestinationRef = useRef<string | null>(null);
+
+  /*
+   * Used when the player confirms a browser-back attempt.
+   */
+  const allowBrowserBackRef = useRef(false);
+
+  /*
    * Prevents duplicate answer submissions.
-   * This is especially important because timer expiry and
-   * manual answer selection can happen very close together.
    */
   const submittedRef = useRef(false);
 
@@ -97,20 +101,9 @@ export default function GamePage() {
    */
   const mountedRef = useRef(true);
 
-  /*
-   * Keeps references to delayed transitions so they can
-   * be cancelled when the component unmounts or another
-   * transition starts.
-   */
-  const advanceTimeoutRef =
-    useRef<ReturnType<typeof setTimeout> | null>(null);
+  const advanceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /*
-   * Abort the current GET request when the component
-   * unmounts or a new game load starts.
-   */
-  const loadAbortRef =
-    useRef<AbortController | null>(null);
+  const loadAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -126,6 +119,128 @@ export default function GamePage() {
       loadAbortRef.current?.abort();
     };
   }, []);
+
+  /*
+   * GAME EXIT / BACK BUTTON GUARD
+   *
+   * Adds a history entry while the game is active.
+   * If the browser/mobile back button is pressed, the
+   * player stays on the game and sees the confirmation.
+   */
+  useEffect(() => {
+    if (!game || game.completed) {
+      return;
+    }
+
+    const currentUrl = window.location.href;
+
+    window.history.pushState({ tinkhuppGameGuard: true }, "", currentUrl);
+
+    const handlePopState = () => {
+      if (allowBrowserBackRef.current) {
+        allowBrowserBackRef.current = false;
+        return;
+      }
+
+      window.history.pushState(
+        { tinkhuppGameGuard: true },
+        "",
+        window.location.href,
+      );
+
+      pendingExitDestinationRef.current = null;
+      setShowExitModal(true);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [game?.gameId, game?.completed]);
+
+  /*
+   * Browser refresh / tab close protection.
+   *
+   * Browsers only allow their own native confirmation
+   * dialog for this case.
+   */
+  useEffect(() => {
+    if (!game || game.completed) {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [game?.gameId, game?.completed]);
+
+  /*
+   * Opens the custom exit confirmation modal.
+   */
+  const requestExit = useCallback(
+    (destination: string) => {
+      if (submitting || loadingNextQuestion || feedback) {
+        return;
+      }
+
+      pendingExitDestinationRef.current = destination;
+
+      setShowExitModal(true);
+    },
+    [submitting, loadingNextQuestion, feedback],
+  );
+
+  /*
+   * Cancel exit and continue playing.
+   */
+  const cancelExit = useCallback(() => {
+    pendingExitDestinationRef.current = null;
+    setShowExitModal(false);
+  }, []);
+
+  /*
+   * Confirm exit.
+   *
+   * For normal in-app navigation we use router.push().
+   * For browser back we allow the queued history navigation
+   * to proceed.
+   */
+  const confirmExit = useCallback(() => {
+    const destination = pendingExitDestinationRef.current;
+
+    pendingExitDestinationRef.current = null;
+    setShowExitModal(false);
+
+    if (destination === "__BROWSER_BACK__") {
+      allowBrowserBackRef.current = true;
+      window.history.back();
+      return;
+    }
+
+    router.push(destination || "/");
+  }, [router]);
+
+  /*
+   * Because popstate doesn't pass through requestExit(),
+   * identify browser-back attempts through the modal state.
+   */
+  useEffect(() => {
+    if (!showExitModal) {
+      return;
+    }
+
+    if (pendingExitDestinationRef.current === null) {
+      pendingExitDestinationRef.current = "__BROWSER_BACK__";
+    }
+  }, [showExitModal]);
 
   const loadGame = useCallback(
     async (showFullLoader = false) => {
@@ -143,48 +258,33 @@ export default function GamePage() {
 
         setError("");
 
-        const response = await fetch(
-          `/api/game/${gameId}`,
-          {
-            method: "GET",
-            cache: "no-store",
-            signal: controller.signal,
-          },
-        );
+        const response = await fetch(`/api/game/${gameId}`, {
+          method: "GET",
+          cache: "no-store",
+          signal: controller.signal,
+        });
 
-        const data =
-          (await response.json()) as ApiResponse<GameData>;
+        const data = (await response.json()) as ApiResponse<GameData>;
 
         if (!response.ok) {
-          if (
-            response.status === 401 ||
-            response.status === 403
-          ) {
+          if (response.status === 401 || response.status === 403) {
             router.replace(
-              `/login?returnTo=${encodeURIComponent(
-                `/play/${gameId}`,
-              )}`,
+              `/login?returnTo=${encodeURIComponent(`/play/${gameId}`)}`,
             );
             return;
           }
 
           throw new Error(
-            data.message ||
-              data.error ||
-              "Unable to load the game.",
+            data.message || data.error || "Unable to load the game.",
           );
         }
 
         if (!data.data) {
-          throw new Error(
-            "The game data was not returned.",
-          );
+          throw new Error("The game data was not returned.");
         }
 
         if (data.data.completed) {
-          router.replace(
-            `/play/${gameId}/results`,
-          );
+          router.replace(`/play/${gameId}/results`);
           return;
         }
 
@@ -199,29 +299,20 @@ export default function GamePage() {
 
         submittedRef.current = false;
 
-        const expiresAt = new Date(
-          data.data.expiresAt,
-        ).getTime();
+        const expiresAt = new Date(data.data.expiresAt).getTime();
 
         if (Number.isNaN(expiresAt)) {
-          throw new Error(
-            "The game timer could not be initialized.",
-          );
+          throw new Error("The game timer could not be initialized.");
         }
 
         const remaining = Math.max(
           0,
-          Math.ceil(
-            (expiresAt - Date.now()) / 1000,
-          ),
+          Math.ceil((expiresAt - Date.now()) / 1000),
         );
 
         setTimeLeft(remaining);
       } catch (err) {
-        if (
-          err instanceof DOMException &&
-          err.name === "AbortError"
-        ) {
+        if (err instanceof DOMException && err.name === "AbortError") {
           return;
         }
 
@@ -244,22 +335,12 @@ export default function GamePage() {
     [gameId, router],
   );
 
-  /*
-   * Initial game load.
-   */
   useEffect(() => {
     loadGame(true);
   }, [loadGame]);
 
   const submitAnswer = useCallback(
-    async (
-      answer: "A" | "B" | "C" | "D" | null,
-    ) => {
-      /*
-       * The ref is the actual duplicate-submission lock.
-       * State alone is not reliable enough because React
-       * state updates are asynchronous.
-       */
+    async (answer: "A" | "B" | "C" | "D" | null) => {
       if (submittedRef.current) {
         return;
       }
@@ -269,51 +350,34 @@ export default function GamePage() {
       setError("");
 
       try {
-        const response = await fetch(
-          `/api/game/${gameId}`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            cache: "no-store",
-            body: JSON.stringify({
-              selectedOption: answer ?? "",
-            }),
+        const response = await fetch(`/api/game/${gameId}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-        );
+          cache: "no-store",
+          body: JSON.stringify({
+            selectedOption: answer ?? "",
+          }),
+        });
 
-        const data =
-          (await response.json()) as ApiResponse<AnswerResponse>;
+        const data = (await response.json()) as ApiResponse<AnswerResponse>;
 
         if (!response.ok) {
-          /*
-           * Authentication may expire while the player
-           * is inside a game.
-           */
-          if (
-            response.status === 401 ||
-            response.status === 403
-          ) {
+          if (response.status === 401 || response.status === 403) {
             router.replace(
-              `/login?returnTo=${encodeURIComponent(
-                `/play/${gameId}`,
-              )}`,
+              `/login?returnTo=${encodeURIComponent(`/play/${gameId}`)}`,
             );
             return;
           }
 
           throw new Error(
-            data.message ||
-              data.error ||
-              "Unable to submit your answer.",
+            data.message || data.error || "Unable to submit your answer.",
           );
         }
 
         if (!data.data) {
-          throw new Error(
-            "The answer result was not returned.",
-          );
+          throw new Error("The answer result was not returned.");
         }
 
         const result = data.data;
@@ -326,10 +390,6 @@ export default function GamePage() {
         setSelectedOption(answer);
         setPointsEarned(result.pointsEarned);
 
-        /*
-         * Update the visible score immediately instead of
-         * waiting for another GET request.
-         */
         setGame((current) => {
           if (!current) {
             return current;
@@ -343,45 +403,30 @@ export default function GamePage() {
           };
         });
 
-        /*
-         * Final question.
-         */
         if (result.completed) {
-          advanceTimeoutRef.current =
-            setTimeout(() => {
-              if (!mountedRef.current) {
-                return;
-              }
-
-              router.replace(
-                `/play/${gameId}/results`,
-              );
-            }, 850);
-
-          return;
-        }
-
-        /*
-         * Move to the next question after showing feedback.
-         */
-        advanceTimeoutRef.current =
-          setTimeout(() => {
+          advanceTimeoutRef.current = setTimeout(() => {
             if (!mountedRef.current) {
               return;
             }
 
-            loadGame(false);
-          }, 700);
+            router.replace(`/play/${gameId}/results`);
+          }, 850);
+
+          return;
+        }
+
+        advanceTimeoutRef.current = setTimeout(() => {
+          if (!mountedRef.current) {
+            return;
+          }
+
+          loadGame(false);
+        }, 700);
       } catch (err) {
         if (!mountedRef.current) {
           return;
         }
 
-        /*
-         * Allow the player to retry if submission genuinely
-         * failed. The server itself also protects against
-         * duplicate answers.
-         */
         submittedRef.current = false;
 
         setError(
@@ -401,14 +446,6 @@ export default function GamePage() {
     [gameId, loadGame, router],
   );
 
-  /*
-   * Timer.
-   *
-   * Important:
-   * This interval does NOT depend on timeLeft.
-   * The previous version recreated the interval every
-   * time the countdown changed.
-   */
   useEffect(() => {
     if (
       !game ||
@@ -434,16 +471,8 @@ export default function GamePage() {
     return () => {
       window.clearInterval(timer);
     };
-  }, [
-    game,
-    feedback,
-    submitting,
-    loadingNextQuestion,
-  ]);
+  }, [game, feedback, submitting, loadingNextQuestion]);
 
-  /*
-   * When the timer reaches zero, submit TIMEOUT exactly once.
-   */
   useEffect(() => {
     if (
       !game ||
@@ -458,18 +487,9 @@ export default function GamePage() {
     if (timeLeft === 0) {
       submitAnswer(null);
     }
-  }, [
-    timeLeft,
-    game,
-    feedback,
-    submitting,
-    loadingNextQuestion,
-    submitAnswer,
-  ]);
+  }, [timeLeft, game, feedback, submitting, loadingNextQuestion, submitAnswer]);
 
-  function handleOptionSelect(
-    option: "A" | "B" | "C" | "D",
-  ) {
+  function handleOptionSelect(option: "A" | "B" | "C" | "D") {
     if (
       submitting ||
       feedback ||
@@ -536,36 +556,21 @@ export default function GamePage() {
 
   const progress =
     game.totalQuestions > 0
-      ? (game.currentQuestionNumber /
-          game.totalQuestions) *
-        100
+      ? (game.currentQuestionNumber / game.totalQuestions) * 100
       : 0;
 
-  const formattedTime = `${Math.floor(
-    timeLeft / 60,
-  )
+  const formattedTime = `${Math.floor(timeLeft / 60)
     .toString()
-    .padStart(2, "0")}:${(timeLeft % 60)
-    .toString()
-    .padStart(2, "0")}`;
+    .padStart(2, "0")}:${(timeLeft % 60).toString().padStart(2, "0")}`;
 
   const isUrgent = timeLeft <= 10;
 
   const timerProgress =
     game.questionTimeSeconds > 0
-      ? Math.max(
-          0,
-          Math.min(
-            100,
-            (timeLeft /
-              game.questionTimeSeconds) *
-              100,
-          ),
-        )
+      ? Math.max(0, Math.min(100, (timeLeft / game.questionTimeSeconds) * 100))
       : 0;
 
-  const timerDegrees =
-    360 - timerProgress * 3.6;
+  const timerDegrees = 360 - timerProgress * 3.6;
 
   return (
     <main className="min-h-screen bg-[#fffaf6] text-[#451900] transition-colors duration-200 dark:bg-[#17110e] dark:text-[#fff4ec]">
@@ -574,11 +579,11 @@ export default function GamePage() {
         <div className="mx-auto flex h-[72px] w-full max-w-[1280px] items-center justify-between px-4 sm:px-7 lg:px-10">
           <button
             type="button"
-            onClick={() => router.push("/")}
-            aria-label="TinkHubb home"
+            onClick={() => requestExit("/")}
+            aria-label="Tinkhupp home"
             className="shrink-0 text-[21px] font-extrabold tracking-[-0.04em] text-[#FF6B00] sm:text-[23px]"
           >
-            TinkHubb
+            Tinkhupp
           </button>
 
           <nav
@@ -587,7 +592,7 @@ export default function GamePage() {
           >
             <button
               type="button"
-              onClick={() => router.push("/")}
+              onClick={() => requestExit("/")}
               className="text-[12px] font-semibold text-[#6f625b] transition hover:text-[#FF6B00] dark:text-[#c9bcb5] dark:hover:text-[#FF6B00]"
             >
               HOME
@@ -595,7 +600,7 @@ export default function GamePage() {
 
             <button
               type="button"
-              onClick={() => router.push("/play")}
+              onClick={() => requestExit("/play")}
               className="text-[12px] font-semibold text-[#FF6B00]"
             >
               PLAY GAME
@@ -603,9 +608,7 @@ export default function GamePage() {
 
             <button
               type="button"
-              onClick={() =>
-                router.push("/leaderboard")
-              }
+              onClick={() => requestExit("/leaderboard")}
               className="text-[12px] font-semibold text-[#6f625b] transition hover:text-[#FF6B00] dark:text-[#c9bcb5] dark:hover:text-[#FF6B00]"
             >
               LEADERBOARD
@@ -613,9 +616,7 @@ export default function GamePage() {
 
             <button
               type="button"
-              onClick={() =>
-                router.push("/how-it-works")
-              }
+              onClick={() => requestExit("/how-it-works")}
               className="text-[12px] font-semibold text-[#6f625b] transition hover:text-[#FF6B00] dark:text-[#c9bcb5] dark:hover:text-[#FF6B00]"
             >
               HOW IT WORKS
@@ -631,11 +632,7 @@ export default function GamePage() {
             </div>
 
             <div className="flex items-center gap-1.5 rounded-full bg-[#fff0e6] px-3 py-2 dark:bg-[#35251d]">
-              <Flame
-                size={14}
-                fill="#FF6B00"
-                className="text-[#FF6B00]"
-              />
+              <Flame size={14} fill="#FF6B00" className="text-[#FF6B00]" />
 
               <span className="hidden text-[10px] font-bold text-[#451900] dark:text-[#fff4ec] sm:inline">
                 Streak
@@ -656,9 +653,7 @@ export default function GamePage() {
 
             <p className="mt-1 text-[18px] font-black tracking-[-0.04em] text-[#451900] dark:text-[#fff4ec]">
               {game.currentQuestionNumber}
-              <span className="mx-1 text-[#b9aaa2]">
-                /
-              </span>
+              <span className="mx-1 text-[#b9aaa2]">/</span>
               {game.totalQuestions}
             </p>
           </div>
@@ -680,11 +675,7 @@ export default function GamePage() {
             />
 
             <div className="relative text-center">
-              <Clock3
-                size={12}
-                className="mx-auto mb-0.5"
-                strokeWidth={2}
-              />
+              <Clock3 size={12} className="mx-auto mb-0.5" strokeWidth={2} />
 
               <span className="text-[10px] font-black tabular-nums">
                 {formattedTime}
@@ -696,14 +687,9 @@ export default function GamePage() {
         {/* SESSION PROGRESS */}
         <div className="mb-7">
           <div className="mb-2 flex items-center justify-between text-[9px] font-bold uppercase tracking-[0.08em] text-[#8b776c] dark:text-[#9e8c83]">
-            <span>
-              Question{" "}
-              {game.currentQuestionNumber}
-            </span>
+            <span>Question {game.currentQuestionNumber}</span>
 
-            <span>
-              {Math.round(progress)}% complete
-            </span>
+            <span>{Math.round(progress)}% complete</span>
           </div>
 
           <div className="h-[4px] overflow-hidden rounded-full bg-[#ffe8d4] dark:bg-[#35251d]">
@@ -732,8 +718,7 @@ export default function GamePage() {
 
           <div className="text-center">
             <span className="inline-flex rounded-full bg-[#fff4e8] px-3 py-1.5 text-[8px] font-extrabold uppercase tracking-[0.1em] text-[#d97722] dark:bg-[#35251d] dark:text-[#ffad78]">
-              Question{" "}
-              {game.currentQuestionNumber}
+              Question {game.currentQuestionNumber}
             </span>
 
             <h1 className="mx-auto mt-5 max-w-[680px] text-[20px] font-extrabold leading-[1.45] tracking-[-0.025em] text-[#451900] dark:text-[#fff4ec] sm:text-[25px]">
@@ -743,128 +728,91 @@ export default function GamePage() {
 
           {/* ANSWERS */}
           <div className="mt-9 grid gap-3 sm:grid-cols-2">
-            {game.question.options.map(
-              (option) => {
-                const isSelected =
-                  selectedOption ===
-                  option.key;
+            {game.question.options.map((option) => {
+              const isSelected = selectedOption === option.key;
 
-                let optionClass =
-                  "border-[#eadfd6] bg-white hover:border-[#FF6B00] hover:bg-[#fffaf6] dark:border-[#49352c] dark:bg-[#241b17] dark:hover:border-[#FF6B00] dark:hover:bg-[#2a1e19]";
+              let optionClass =
+                "border-[#eadfd6] bg-white hover:border-[#FF6B00] hover:bg-[#fffaf6] dark:border-[#49352c] dark:bg-[#241b17] dark:hover:border-[#FF6B00] dark:hover:bg-[#2a1e19]";
 
-                let letterClass =
-                  "border-[#eadfd6] bg-[#fffaf6] text-[#6f7278] dark:border-[#49352c] dark:bg-[#30241f] dark:text-[#b9aaa2]";
+              let letterClass =
+                "border-[#eadfd6] bg-[#fffaf6] text-[#6f7278] dark:border-[#49352c] dark:bg-[#30241f] dark:text-[#b9aaa2]";
 
-                let textClass =
-                  "text-[#451900] dark:text-[#fff4ec]";
+              let textClass = "text-[#451900] dark:text-[#fff4ec]";
 
-                if (
-                  isSelected &&
-                  feedback === "CORRECT"
-                ) {
-                  optionClass =
-                    "border-green-400 bg-green-50 dark:border-green-700 dark:bg-green-950/25";
+              if (isSelected && feedback === "CORRECT") {
+                optionClass =
+                  "border-green-400 bg-green-50 dark:border-green-700 dark:bg-green-950/25";
 
-                  letterClass =
-                    "border-green-500 bg-green-500 text-white";
+                letterClass = "border-green-500 bg-green-500 text-white";
 
-                  textClass =
-                    "text-green-800 dark:text-green-200";
-                } else if (
-                  isSelected &&
-                  feedback === "INCORRECT"
-                ) {
-                  optionClass =
-                    "border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/25";
+                textClass = "text-green-800 dark:text-green-200";
+              } else if (isSelected && feedback === "INCORRECT") {
+                optionClass =
+                  "border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/25";
 
-                  letterClass =
-                    "border-red-500 bg-red-500 text-white";
+                letterClass = "border-red-500 bg-red-500 text-white";
 
-                  textClass =
-                    "text-red-800 dark:text-red-200";
-                } else if (
-                  isSelected &&
-                  feedback === "TIMEOUT"
-                ) {
-                  optionClass =
-                    "border-[#e5d7ce] bg-[#faf7f4] dark:border-[#49352c] dark:bg-[#30241f]";
-                } else if (isSelected) {
-                  optionClass =
-                    "border-[#FF6B00] bg-[#FF6B00] shadow-[0_8px_24px_rgba(255,107,0,0.16)]";
+                textClass = "text-red-800 dark:text-red-200";
+              } else if (isSelected && feedback === "TIMEOUT") {
+                optionClass =
+                  "border-[#e5d7ce] bg-[#faf7f4] dark:border-[#49352c] dark:bg-[#30241f]";
+              } else if (isSelected) {
+                optionClass =
+                  "border-[#FF6B00] bg-[#FF6B00] shadow-[0_8px_24px_rgba(255,107,0,0.16)]";
 
-                  letterClass =
-                    "border-white/40 bg-white text-[#FF6B00]";
+                letterClass = "border-white/40 bg-white text-[#FF6B00]";
 
-                  textClass = "text-white";
-                }
+                textClass = "text-white";
+              }
 
-                return (
-                  <button
-                    key={option.key}
-                    type="button"
-                    disabled={
-                      submitting ||
-                      !!feedback ||
-                      loadingNextQuestion
-                    }
-                    onClick={() =>
-                      handleOptionSelect(
-                        option.key,
-                      )
-                    }
-                    aria-pressed={isSelected}
-                    className={`group flex min-h-[68px] w-full items-center gap-3 rounded-[10px] border px-3.5 text-left transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/25 disabled:cursor-not-allowed sm:min-h-[74px] sm:px-4 ${optionClass}`}
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  disabled={submitting || !!feedback || loadingNextQuestion}
+                  onClick={() => handleOptionSelect(option.key)}
+                  aria-pressed={isSelected}
+                  className={`group flex min-h-[68px] w-full items-center gap-3 rounded-[10px] border px-3.5 text-left transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/25 disabled:cursor-not-allowed sm:min-h-[74px] sm:px-4 ${optionClass}`}
+                >
+                  <span
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-[10px] font-extrabold transition sm:h-10 sm:w-10 ${letterClass}`}
                   >
-                    <span
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-[10px] font-extrabold transition sm:h-10 sm:w-10 ${letterClass}`}
-                    >
-                      {feedback ===
-                        "CORRECT" &&
-                      isSelected ? (
-                        <Check size={15} />
-                      ) : feedback ===
-                          "INCORRECT" &&
-                        isSelected ? (
-                        <X size={15} />
-                      ) : (
-                        option.key
-                      )}
-                    </span>
+                    {feedback === "CORRECT" && isSelected ? (
+                      <Check size={15} />
+                    ) : feedback === "INCORRECT" && isSelected ? (
+                      <X size={15} />
+                    ) : (
+                      option.key
+                    )}
+                  </span>
 
-                    <span
-                      className={`text-[11px] font-semibold leading-5 transition-colors sm:text-[12px] ${textClass}`}
-                    >
-                      {option.text}
-                    </span>
-                  </button>
-                );
-              },
-            )}
+                  <span
+                    className={`text-[11px] font-semibold leading-5 transition-colors sm:text-[12px] ${textClass}`}
+                  >
+                    {option.text}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           {/* FEEDBACK */}
           {feedback && (
             <div
               className={`mt-6 rounded-[10px] px-4 py-3.5 text-center ${
-                feedback ===
-                "CORRECT"
+                feedback === "CORRECT"
                   ? "bg-green-50 text-green-700 dark:bg-green-950/25 dark:text-green-300"
-                  : feedback ===
-                      "INCORRECT"
+                  : feedback === "INCORRECT"
                     ? "bg-red-50 text-red-700 dark:bg-red-950/25 dark:text-red-300"
                     : "bg-[#fff9dc] text-[#7d7040] dark:bg-[#332b17] dark:text-[#cbbd83]"
               }`}
             >
               <p className="text-[11px] font-extrabold">
-                {feedback ===
-                "CORRECT"
+                {feedback === "CORRECT"
                   ? `Correct! +${pointsEarned} ${
-                      pointsEarned === 1
-                        ? "point"
-                        : "points"
+                      pointsEarned === 1 ? "point" : "points"
                     }`
-                  : feedback ===
-                      "INCORRECT"
+                  : feedback === "INCORRECT"
                     ? "Incorrect. Moving to the next question..."
                     : "Time's up. Moving to the next question..."}
               </p>
@@ -891,10 +839,7 @@ export default function GamePage() {
             </strong>
           </span>
 
-          <span
-            aria-hidden="true"
-            className="text-[#c7b8af]"
-          >
+          <span aria-hidden="true" className="text-[#c7b8af]">
             •
           </span>
 
@@ -905,10 +850,7 @@ export default function GamePage() {
             </strong>
           </span>
 
-          <span
-            aria-hidden="true"
-            className="text-[#c7b8af]"
-          >
+          <span aria-hidden="true" className="text-[#c7b8af]">
             •
           </span>
 
@@ -920,6 +862,58 @@ export default function GamePage() {
           </span>
         </div>
       </section>
+
+      {/* EXIT GAME CONFIRMATION MODAL */}
+      {showExitModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-[#1b0d06]/55 px-4 py-6 backdrop-blur-[3px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="leave-game-title"
+          aria-describedby="leave-game-description"
+        >
+          <div className="w-full max-w-[390px] overflow-hidden rounded-[18px] border border-[#eadfd6] bg-white shadow-[0_24px_70px_rgba(69,25,0,0.2)] dark:border-[#49352c] dark:bg-[#241b17] dark:shadow-[0_24px_70px_rgba(0,0,0,0.45)]">
+            <div className="px-6 pb-5 pt-7 text-center sm:px-7">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#fff0e6] dark:bg-[#35251d]">
+                <LogOut size={21} strokeWidth={2} className="text-[#FF6B00]" />
+              </div>
+
+              <h2
+                id="leave-game-title"
+                className="mt-5 text-[18px] font-extrabold tracking-[-0.025em] text-[#451900] dark:text-[#fff4ec]"
+              >
+                Leave Game?
+              </h2>
+
+              <p
+                id="leave-game-description"
+                className="mx-auto mt-2 max-w-[300px] text-[11px] leading-5 text-[#6f7278] dark:text-[#a99b93]"
+              >
+                Are you sure you want to leave this game? Your current progress
+                will not continue if you leave.
+              </p>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-[#f1e3da] bg-[#fffaf6] p-4 dark:border-[#342620] dark:bg-[#1d1512] sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={cancelExit}
+                className="min-h-[42px] rounded-[8px] border border-[#eadfd6] bg-white px-5 text-[10px] font-extrabold text-[#451900] transition hover:border-[#d8c8be] hover:bg-[#fffaf6] focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/25 dark:border-[#49352c] dark:bg-[#241b17] dark:text-[#fff4ec] dark:hover:bg-[#2a1e19]"
+              >
+                Stay in Game
+              </button>
+
+              <button
+                type="button"
+                onClick={confirmExit}
+                className="min-h-[42px] rounded-[8px] bg-[#FF6B00] px-5 text-[10px] font-extrabold text-white transition hover:bg-[#e95f00] focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/30"
+              >
+                Leave Game
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

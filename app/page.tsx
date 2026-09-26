@@ -87,7 +87,7 @@ const steps = [
     number: "01",
     title: "Register",
     description:
-      "Create your TinkHubb account with your username and phone number.",
+      "Create your Tinkhupp account with your username and phone number.",
   },
   {
     number: "02",
@@ -119,7 +119,7 @@ export default function HomePage() {
           <div className="relative mx-auto grid min-h-[620px] w-full max-w-[1440px] items-center gap-14 px-5 py-16 sm:px-8 sm:py-20 md:min-h-[650px] md:py-24 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:px-12 lg:py-28">
             <div className="max-w-[650px]">
               <p className="mb-5 text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#FF6B00] sm:text-[11px]">
-                TINKHUBB TRIVIA
+                TINKHUPP TRIVIA
               </p>
 
               <h1 className="max-w-[620px] text-[45px] font-extrabold leading-[0.98] tracking-[-0.055em] text-[#451900] dark:text-[#fff4ec] sm:text-[58px] md:text-[68px] lg:text-[72px]">

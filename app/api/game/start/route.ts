@@ -32,7 +32,7 @@ export async function POST() {
 
     const totalTimeSeconds = settings?.totalTimeSeconds ?? 600;
 
-    // TinkHubb uses one total session timer divided equally
+    // Tinkhupp uses one total session timer divided equally
     // across the 10 questions.
     const questionTimeSeconds = Math.floor(
       totalTimeSeconds / TOTAL_QUESTIONS,

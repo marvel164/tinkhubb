@@ -37,10 +37,10 @@ export default function Navbar() {
         <Link 
           href="/" 
           onClick={closeMobile} 
-          aria-label="TinkHubb home" 
+          aria-label="Tinkhupp home" 
           className="shrink-0 text-[21px] font-extrabold tracking-[-0.04em] text-[#ff8a3d]" 
         > 
-          TinkHubb 
+          Tinkhupp 
         </Link> 
  
         <nav 

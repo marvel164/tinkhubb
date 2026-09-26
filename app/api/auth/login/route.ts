@@ -47,7 +47,7 @@ export async function POST(request: Request) {
         {
           success: false,
           message:
-            "No TinkHubb account was found with this phone number. Please register first.",
+            "No Tinkhupp account was found with this phone number. Please register first.",
         },
         { status: 404 },
       );
@@ -73,8 +73,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // OTP verification is temporarily disabled for returning users.
-    // Create the normal authenticated session immediately.
     await createUserSession(user.id);
 
     return NextResponse.json({

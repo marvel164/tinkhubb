@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import type { AdminUser } from "@/app/generated/prisma/client";
 
-const ADMIN_SESSION_COOKIE = "tinkhubb_admin_session";
+const ADMIN_SESSION_COOKIE = "tinkhupp_admin_session";
 const ADMIN_SESSION_DURATION_DAYS = 7;
 
 function hashToken(token: string) {
