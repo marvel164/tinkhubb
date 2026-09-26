@@ -27,7 +27,7 @@ export default function Navbar() {
           className="shrink-0 text-[22px] font-bold tracking-[-0.03em] text-[#FF6B00]"
           onClick={() => setMobileOpen(false)}
         >
-          TinkHubb
+          Tinkhupp
         </Link>
 
         <nav className="hidden items-center gap-7 lg:flex">

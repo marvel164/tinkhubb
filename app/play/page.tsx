@@ -72,7 +72,7 @@ export default function PlayPage() {
 
               <p className="mt-7 max-w-[510px] text-[14px] leading-7 text-[#786b63] dark:text-[#c1b4ad] sm:text-[15px]">
                 Ten questions. One timed round. Every correct answer gets
-                you closer to the top of the TinkHubb leaderboard.
+                you closer to the top of the Tinkhupp leaderboard.
               </p>
 
               <div className="mt-8 grid max-w-[470px] grid-cols-2 gap-3 sm:grid-cols-3">
@@ -159,7 +159,7 @@ export default function PlayPage() {
                 <div className="flex items-center justify-between border-b border-[#f1e5df] pb-5 dark:border-[#3b2d26]">
                   <div>
                     <p className="text-[9px] font-extrabold uppercase tracking-[0.15em] text-[#FF6B00]">
-                      TINKHUBB TRIVIA
+                      TINKHUPP TRIVIA
                     </p>
 
                     <p className="mt-1 text-[13px] font-extrabold text-[#451900] dark:text-[#fff4ec]">

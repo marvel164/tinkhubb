@@ -74,11 +74,11 @@ export default function LoginPage() {
               </p>
 
               <h1 className="mt-4 text-[29px] font-extrabold tracking-[-0.04em] text-[#451900] dark:text-[#fff4ec]">
-                Sign in to TinkHubb
+                Sign in to Tinkhupp
               </h1>
 
               <p className="mx-auto mt-3 max-w-[390px] text-[12px] leading-6 text-[#6f7278] dark:text-[#b9aaa2]">
-                Enter the phone number linked to your TinkHubb account to
+                Enter the phone number linked to your Tinkhupp account to
                 continue.
               </p>
             </div>

@@ -15,7 +15,7 @@ const steps = [
     icon: UserRoundPlus,
     title: "Register",
     description:
-      "Create your TinkHubb account with your username and phone number. It only takes a moment to get ready.",
+      "Create your Tinkhupp account with your username and phone number. It only takes a moment to get ready.",
   },
   {
     number: "02",
@@ -62,7 +62,7 @@ export default function Page() {
               </h1>
 
               <p className="mt-6 max-w-[590px] text-[14px] leading-7 text-[#786b63] dark:text-[#c1b4ad] sm:text-[15px]">
-                TinkHubb keeps trivia simple. Register, play your round,
+                Tinkhupp keeps trivia simple. Register, play your round,
                 score points, and keep coming back to improve your position.
               </p>
             </div>
@@ -133,7 +133,7 @@ export default function Page() {
               </h2>
 
               <p className="mt-5 max-w-[570px] text-[14px] leading-7 text-[#786b63] dark:text-[#c1b4ad]">
-                Each round gives you 10 questions from TinkHubb&apos;s
+                Each round gives you 10 questions from Tinkhupp&apos;s
                 trivia categories. Answer each question before the timer
                 runs out and move through the round one question at a time.
               </p>

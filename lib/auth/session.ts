@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
-const SESSION_COOKIE = "tinkhubb_session";
+const SESSION_COOKIE = "tinkhupp_session";
 const SESSION_DURATION_DAYS = 30;
 
 function hashToken(token: string) {

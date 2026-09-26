@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/session";
+import { createAdminNotification } from "@/lib/notifications/admin";
 
 type RouteContext = {
   params: Promise<{
@@ -9,6 +10,20 @@ type RouteContext = {
 };
 
 const STREAK_TIMEZONE = "Africa/Lagos";
+
+const STREAK_MILESTONES = new Set([7, 14, 30]);
+
+/*
+ * Suspicious activity detection.
+ *
+ * A session is flagged when a player records
+ * three answers that each take 2 seconds or less.
+ *
+ * This is intentionally conservative so a single
+ * fast answer does not create a false alert.
+ */
+const SUSPICIOUS_FAST_ANSWER_MS = 2_000;
+const SUSPICIOUS_FAST_ANSWER_THRESHOLD = 3;
 
 function getLagosDateKey(date: Date) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -21,38 +36,28 @@ function getLagosDateKey(date: Date) {
 
 function getLagosDayStart(date: Date) {
   const dateKey = getLagosDateKey(date);
-  const [year, month, day] = dateKey
-    .split("-")
-    .map(Number);
+
+  const [year, month, day] = dateKey.split("-").map(Number);
 
   /*
    * Africa/Lagos is UTC+1 and does not observe DST.
    * Therefore Lagos 00:00 corresponds to the previous
    * day at 23:00 UTC.
    */
-  return new Date(
-    Date.UTC(year, month - 1, day, 0, 0, 0) -
-      60 * 60 * 1000,
-  );
+  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - 60 * 60 * 1000);
 }
 
 function getPreviousDateKey(dateKey: string) {
-  const [year, month, day] = dateKey
-    .split("-")
-    .map(Number);
+  const [year, month, day] = dateKey.split("-").map(Number);
 
   const previous = new Date(
-    Date.UTC(year, month - 1, day) -
-      24 * 60 * 60 * 1000,
+    Date.UTC(year, month - 1, day) - 24 * 60 * 60 * 1000,
   );
 
   return previous.toISOString().slice(0, 10);
 }
 
-export async function GET(
-  _request: Request,
-  { params }: RouteContext,
-) {
+export async function GET(_request: Request, { params }: RouteContext) {
   try {
     const user = await getCurrentUser();
 
@@ -93,9 +98,7 @@ export async function GET(
     }
 
     const currentQuestion =
-      game.questions.find(
-        (question) => !question.answered,
-      ) ?? null;
+      game.questions.find((question) => !question.answered) ?? null;
 
     if (!currentQuestion) {
       const freshUser = await prisma.user.findUnique({
@@ -118,18 +121,15 @@ export async function GET(
           totalQuestions: game.totalQuestions,
           currentQuestionNumber: game.totalQuestions,
 
-          questionTimeSeconds:
-            game.questionTimeSeconds,
+          questionTimeSeconds: game.questionTimeSeconds,
 
           score: game.score,
           correctAnswers: game.correctAnswers,
           incorrectAnswers: game.incorrectAnswers,
           questionsAnswered: game.questionsAnswered,
 
-          currentStreak:
-            freshUser?.currentStreak ?? 0,
-          longestStreak:
-            freshUser?.longestStreak ?? 0,
+          currentStreak: freshUser?.currentStreak ?? 0,
+          longestStreak: freshUser?.longestStreak ?? 0,
 
           durationSeconds: game.durationSeconds,
           completedAt: game.completedAt,
@@ -153,8 +153,7 @@ export async function GET(
     }
 
     const expiresAt = new Date(
-      questionStartedAt.getTime() +
-        game.questionTimeSeconds * 1000,
+      questionStartedAt.getTime() + game.questionTimeSeconds * 1000,
     );
 
     return NextResponse.json({
@@ -165,11 +164,9 @@ export async function GET(
         completed: false,
 
         totalQuestions: game.totalQuestions,
-        currentQuestionNumber:
-          currentQuestion.questionNumber,
+        currentQuestionNumber: currentQuestion.questionNumber,
 
-        questionTimeSeconds:
-          game.questionTimeSeconds,
+        questionTimeSeconds: game.questionTimeSeconds,
         questionStartedAt,
         expiresAt,
 
@@ -180,8 +177,7 @@ export async function GET(
 
         question: {
           id: currentQuestion.id,
-          questionNumber:
-            currentQuestion.questionNumber,
+          questionNumber: currentQuestion.questionNumber,
           text: currentQuestion.questionText,
 
           options: [
@@ -218,10 +214,7 @@ export async function GET(
   }
 }
 
-export async function POST(
-  request: Request,
-  { params }: RouteContext,
-) {
+export async function POST(request: Request, { params }: RouteContext) {
   try {
     const user = await getCurrentUser();
 
@@ -246,10 +239,7 @@ export async function POST(
 
     const validOptions = ["A", "B", "C", "D"];
 
-    if (
-      selectedOption &&
-      !validOptions.includes(selectedOption)
-    ) {
+    if (selectedOption && !validOptions.includes(selectedOption)) {
       return NextResponse.json(
         {
           success: false,
@@ -292,307 +282,326 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-          message:
-            "This game has already been completed.",
+          message: "This game has already been completed.",
         },
         { status: 409 },
       );
     }
 
-    const startedAt =
-      currentQuestion.startedAt ?? new Date();
+    const startedAt = currentQuestion.startedAt ?? new Date();
 
     const now = new Date();
 
-    const elapsedMs =
-      now.getTime() - startedAt.getTime();
+    const elapsedMs = now.getTime() - startedAt.getTime();
 
-    const timeExpired =
-      elapsedMs >=
-      game.questionTimeSeconds * 1000;
+    const timeExpired = elapsedMs >= game.questionTimeSeconds * 1000;
 
-    const timedOut =
-      !selectedOption || timeExpired;
+    const timedOut = !selectedOption || timeExpired;
 
     const result = timedOut
       ? "TIMEOUT"
-      : selectedOption ===
-          currentQuestion.correctOption
+      : selectedOption === currentQuestion.correctOption
         ? "CORRECT"
         : "INCORRECT";
 
     const pointsEarned =
-      result === "CORRECT"
-        ? currentQuestion.pointsAvailable
-        : 0;
+      result === "CORRECT" ? currentQuestion.pointsAvailable : 0;
 
     const responseTimeMs = Math.max(
       0,
-      Math.min(
-        elapsedMs,
-        game.questionTimeSeconds * 1000,
-      ),
+      Math.min(elapsedMs, game.questionTimeSeconds * 1000),
     );
 
     const nextQuestion = game.questions.find(
       (question) =>
-        question.questionNumber ===
-        currentQuestion.questionNumber + 1,
+        question.questionNumber === currentQuestion.questionNumber + 1,
     );
 
     const isLastQuestion = !nextQuestion;
 
-    const transactionResult =
-      await prisma.$transaction(async (tx) => {
-        const claimedQuestion =
-          await tx.gameQuestion.updateMany({
-            where: {
-              id: currentQuestion.id,
-              answered: false,
-            },
-            data: {
-              answered: true,
-              answeredAt: now,
-            },
-          });
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      const claimedQuestion = await tx.gameQuestion.updateMany({
+        where: {
+          id: currentQuestion.id,
+          answered: false,
+        },
+        data: {
+          answered: true,
+          answeredAt: now,
+        },
+      });
 
-        if (claimedQuestion.count !== 1) {
-          throw new Error(
-            "QUESTION_ALREADY_ANSWERED",
-          );
-        }
+      if (claimedQuestion.count !== 1) {
+        throw new Error("QUESTION_ALREADY_ANSWERED");
+      }
 
-        await tx.gameAnswer.create({
+      await tx.gameAnswer.create({
+        data: {
+          userId: user.id,
+          gameQuestionId: currentQuestion.id,
+          selectedOption: selectedOption || null,
+          result,
+          pointsEarned,
+          responseTimeMs,
+          answeredAt: now,
+        },
+      });
+
+      /*
+       * Detect an unusual rapid-answer pattern inside
+       * this specific game session.
+       *
+       * The current answer has already been created,
+       * so the count includes it.
+       */
+      let suspiciousActivity = false;
+
+      if (responseTimeMs <= SUSPICIOUS_FAST_ANSWER_MS) {
+        const fastAnswerCount = await tx.gameAnswer.count({
+          where: {
+            userId: user.id,
+            gameQuestion: {
+              gameSessionId: game.id,
+            },
+            responseTimeMs: {
+              lte: SUSPICIOUS_FAST_ANSWER_MS,
+            },
+          },
+        });
+
+        /*
+         * Trigger only on the exact threshold so the same
+         * game does not generate repeated notifications.
+         */
+        suspiciousActivity =
+          fastAnswerCount === SUSPICIOUS_FAST_ANSWER_THRESHOLD;
+      }
+
+      const updatedGame = await tx.gameSession.update({
+        where: {
+          id: game.id,
+        },
+        data: {
+          score: {
+            increment: pointsEarned,
+          },
+
+          correctAnswers: result === "CORRECT" ? { increment: 1 } : undefined,
+
+          incorrectAnswers: result !== "CORRECT" ? { increment: 1 } : undefined,
+
+          questionsAnswered: {
+            increment: 1,
+          },
+
+          ...(isLastQuestion
+            ? {
+                status: "COMPLETED",
+                completedAt: now,
+
+                durationSeconds: Math.round(
+                  (now.getTime() - game.startedAt.getTime()) / 1000,
+                ),
+
+                scoreReachedAt: pointsEarned > 0 ? now : game.scoreReachedAt,
+              }
+            : {}),
+        },
+      });
+
+      /*
+       * Read the latest player state inside the transaction.
+       * This prevents the streak calculation from relying
+       * on stale session data.
+       */
+      const player = await tx.user.findUnique({
+        where: {
+          id: user.id,
+        },
+        select: {
+          currentStreak: true,
+          longestStreak: true,
+          lastPlayedDate: true,
+          username: true,
+        },
+      });
+
+      if (!player) {
+        throw new Error("USER_NOT_FOUND");
+      }
+
+      let currentStreak = player.currentStreak;
+
+      let longestStreak = player.longestStreak;
+
+      let streakMilestone: number | null = null;
+
+      /*
+       * Streaks are updated exactly once when a game
+       * is completed for a Lagos calendar day.
+       */
+      if (isLastQuestion) {
+        const todayKey = getLagosDateKey(now);
+
+        const todayStart = getLagosDayStart(now);
+
+        /*
+         * createMany + skipDuplicates makes the
+         * daily streak update idempotent.
+         */
+        const streakRecord = await tx.streakRecord.createMany({
           data: {
             userId: user.id,
-            gameQuestionId: currentQuestion.id,
-            selectedOption:
-              selectedOption || null,
-            result,
-            pointsEarned,
-            responseTimeMs,
-            answeredAt: now,
+            streakDate: todayStart,
+            streakValue: 0,
+            completedGame: true,
           },
+          skipDuplicates: true,
         });
 
-        const updatedGame =
-          await tx.gameSession.update({
+        if (streakRecord.count === 1) {
+          const yesterdayKey = getPreviousDateKey(todayKey);
+
+          const lastPlayedKey = player.lastPlayedDate
+            ? getLagosDateKey(player.lastPlayedDate)
+            : null;
+
+          if (lastPlayedKey === yesterdayKey) {
+            currentStreak = player.currentStreak + 1;
+          } else if (lastPlayedKey === todayKey) {
+            currentStreak = player.currentStreak;
+          } else {
+            currentStreak = 1;
+          }
+
+          longestStreak = Math.max(player.longestStreak, currentStreak);
+
+          if (
+            currentStreak !== player.currentStreak &&
+            STREAK_MILESTONES.has(currentStreak)
+          ) {
+            streakMilestone = currentStreak;
+          }
+
+          await tx.streakRecord.update({
             where: {
-              id: game.id,
-            },
-            data: {
-              score: {
-                increment: pointsEarned,
-              },
-
-              correctAnswers:
-                result === "CORRECT"
-                  ? { increment: 1 }
-                  : undefined,
-
-              incorrectAnswers:
-                result !== "CORRECT"
-                  ? { increment: 1 }
-                  : undefined,
-
-              questionsAnswered: {
-                increment: 1,
-              },
-
-              ...(isLastQuestion
-                ? {
-                    status: "COMPLETED",
-                    completedAt: now,
-
-                    durationSeconds: Math.round(
-                      (now.getTime() -
-                        game.startedAt.getTime()) /
-                        1000,
-                    ),
-
-                    scoreReachedAt:
-                      pointsEarned > 0
-                        ? now
-                        : game.scoreReachedAt,
-                  }
-                : {}),
-            },
-          });
-
-        /*
-         * Read the latest player state inside the transaction.
-         * This prevents the streak calculation from relying
-         * on stale session data.
-         */
-        const player = await tx.user.findUnique({
-          where: {
-            id: user.id,
-          },
-          select: {
-            currentStreak: true,
-            longestStreak: true,
-            lastPlayedDate: true,
-          },
-        });
-
-        if (!player) {
-          throw new Error("USER_NOT_FOUND");
-        }
-
-        let currentStreak =
-          player.currentStreak;
-
-        let longestStreak =
-          player.longestStreak;
-
-        /*
-         * Streaks are updated exactly once when a game
-         * is completed for a Lagos calendar day.
-         */
-        if (isLastQuestion) {
-          const todayKey =
-            getLagosDateKey(now);
-
-          const todayStart =
-            getLagosDayStart(now);
-
-          /*
-           * createMany + skipDuplicates makes the
-           * daily streak update idempotent.
-           *
-           * If the user completes another game today,
-           * the existing unique StreakRecord prevents
-           * the streak from increasing again.
-           */
-          const streakRecord =
-            await tx.streakRecord.createMany({
-              data: {
+              userId_streakDate: {
                 userId: user.id,
                 streakDate: todayStart,
-                streakValue: 0,
-                completedGame: true,
               },
-              skipDuplicates: true,
-            });
+            },
+            data: {
+              streakValue: currentStreak,
+              completedGame: true,
+            },
+          });
+        }
+      }
 
-          if (streakRecord.count === 1) {
-            const yesterdayKey =
-              getPreviousDateKey(todayKey);
+      const updatedUser = await tx.user.update({
+        where: {
+          id: user.id,
+        },
+        data: {
+          totalPoints: {
+            increment: pointsEarned,
+          },
 
-            const lastPlayedKey =
-              player.lastPlayedDate
-                ? getLagosDateKey(
-                    player.lastPlayedDate,
-                  )
-                : null;
+          questionsAnswered: {
+            increment: 1,
+          },
 
-            if (
-              lastPlayedKey ===
-              yesterdayKey
-            ) {
-              currentStreak =
-                player.currentStreak + 1;
-            } else if (
-              lastPlayedKey === todayKey
-            ) {
-              currentStreak =
-                player.currentStreak;
-            } else {
-              currentStreak = 1;
-            }
+          correctAnswers: result === "CORRECT" ? { increment: 1 } : undefined,
 
-            longestStreak = Math.max(
-              player.longestStreak,
-              currentStreak,
-            );
-
-            await tx.streakRecord.update({
-              where: {
-                userId_streakDate: {
-                  userId: user.id,
-                  streakDate: todayStart,
+          ...(isLastQuestion
+            ? {
+                gamesPlayed: {
+                  increment: 1,
                 },
-              },
-              data: {
-                streakValue: currentStreak,
-                completedGame: true,
-              },
-            });
-          }
-        }
 
-        const updatedUser =
-          await tx.user.update({
-            where: {
-              id: user.id,
-            },
-            data: {
-              totalPoints: {
-                increment: pointsEarned,
-              },
+                ...(currentStreak !== player.currentStreak ||
+                longestStreak !== player.longestStreak
+                  ? {
+                      currentStreak,
+                      longestStreak,
+                      lastPlayedDate: getLagosDayStart(now),
+                    }
+                  : {}),
+              }
+            : {}),
 
-              questionsAnswered: {
-                increment: 1,
-              },
-
-              correctAnswers:
-                result === "CORRECT"
-                  ? { increment: 1 }
-                  : undefined,
-
-              ...(isLastQuestion
-                ? {
-                    gamesPlayed: {
-                      increment: 1,
-                    },
-
-                    ...(currentStreak !==
-                      player.currentStreak ||
-                    longestStreak !==
-                      player.longestStreak
-                      ? {
-                          currentStreak,
-                          longestStreak,
-                          lastPlayedDate:
-                            getLagosDayStart(now),
-                        }
-                      : {}),
-                  }
-                : {}),
-
-              ...(pointsEarned > 0
-                ? {
-                    totalPointsReachedAt:
-                      now,
-                  }
-                : {}),
-            },
-            select: {
-              currentStreak: true,
-              longestStreak: true,
-              lastPlayedDate: true,
-            },
-          });
-
-        if (nextQuestion) {
-          await tx.gameQuestion.update({
-            where: {
-              id: nextQuestion.id,
-            },
-            data: {
-              startedAt: now,
-            },
-          });
-        }
-
-        return {
-          game: updatedGame,
-          user: updatedUser,
-          streakUpdated:
-            isLastQuestion &&
-            updatedUser.lastPlayedDate !== null,
-        };
+          ...(pointsEarned > 0
+            ? {
+                totalPointsReachedAt: now,
+              }
+            : {}),
+        },
+        select: {
+          currentStreak: true,
+          longestStreak: true,
+          lastPlayedDate: true,
+          username: true,
+        },
       });
+
+      if (nextQuestion) {
+        await tx.gameQuestion.update({
+          where: {
+            id: nextQuestion.id,
+          },
+          data: {
+            startedAt: now,
+          },
+        });
+      }
+
+      return {
+        game: updatedGame,
+        user: updatedUser,
+        streakUpdated: isLastQuestion && updatedUser.lastPlayedDate !== null,
+        streakMilestone,
+        suspiciousActivity,
+      };
+    });
+
+    /*
+     * Notifications are deliberately created only after
+     * the game transaction commits successfully.
+     *
+     * A notification failure must never cause an already
+     * completed answer/game to be reported as failed.
+     */
+    if (transactionResult.suspiciousActivity) {
+      try {
+        await createAdminNotification({
+          type: "SUSPICIOUS_ACTIVITY",
+          title: "Suspicious activity detected",
+          message: `${transactionResult.user.username} showed an unusual rapid-answer pattern during a game session.`,
+          userId: user.id,
+        });
+      } catch (notificationError) {
+        console.error(
+          "Suspicious activity notification error:",
+          notificationError,
+        );
+      }
+    }
+
+    if (transactionResult.streakMilestone !== null) {
+      try {
+        await createAdminNotification({
+          type: "STREAK_MILESTONE",
+          title: "Streak milestone reached",
+          message: `${transactionResult.user.username} reached a ${transactionResult.streakMilestone}-day streak.`,
+          userId: user.id,
+        });
+      } catch (notificationError) {
+        console.error(
+          "Streak milestone notification error:",
+          notificationError,
+        );
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -605,51 +614,38 @@ export async function POST(
         gameId: transactionResult.game.id,
 
         score: transactionResult.game.score,
-        correctAnswers:
-          transactionResult.game.correctAnswers,
-        incorrectAnswers:
-          transactionResult.game.incorrectAnswers,
-        questionsAnswered:
-          transactionResult.game.questionsAnswered,
+        correctAnswers: transactionResult.game.correctAnswers,
+        incorrectAnswers: transactionResult.game.incorrectAnswers,
+        questionsAnswered: transactionResult.game.questionsAnswered,
 
-        currentStreak:
-          transactionResult.user.currentStreak,
-        longestStreak:
-          transactionResult.user.longestStreak,
+        currentStreak: transactionResult.user.currentStreak,
+        longestStreak: transactionResult.user.longestStreak,
 
-        streakUpdated:
-          transactionResult.streakUpdated,
+        streakUpdated: transactionResult.streakUpdated,
 
-        nextQuestionNumber:
-          nextQuestion?.questionNumber ?? null,
+        nextQuestionNumber: nextQuestion?.questionNumber ?? null,
       },
     });
   } catch (error) {
     if (
       error instanceof Error &&
-      error.message ===
-        "QUESTION_ALREADY_ANSWERED"
+      error.message === "QUESTION_ALREADY_ANSWERED"
     ) {
       return NextResponse.json(
         {
           success: false,
-          message:
-            "This question has already been answered.",
+          message: "This question has already been answered.",
         },
         { status: 409 },
       );
     }
 
-    console.error(
-      "Game answer error:",
-      error,
-    );
+    console.error("Game answer error:", error);
 
     return NextResponse.json(
       {
         success: false,
-        message:
-          "Unable to submit your answer.",
+        message: "Unable to submit your answer.",
       },
       { status: 500 },
     );

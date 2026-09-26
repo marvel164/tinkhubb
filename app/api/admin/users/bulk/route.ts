@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAdmin } from "@/lib/auth/admin/session";
+import { createAdminNotification } from "@/lib/notifications/admin";
 
 const bodySchema = z.object({
   action: z.enum(["SUSPEND", "UNSUSPEND", "DELETE"]),
@@ -13,10 +14,7 @@ export async function POST(request: Request) {
     const admin = await getCurrentAdmin();
 
     if (!admin) {
-      return NextResponse.json(
-        { message: "Unauthorized." },
-        { status: 401 },
-      );
+      return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
     }
 
     const body = await request.json();
@@ -105,6 +103,19 @@ export async function POST(request: Request) {
         })),
       });
     });
+
+    if (action === "SUSPEND") {
+      await Promise.all(
+        eligibleUsers.map((user) =>
+          createAdminNotification({
+            type: "USER_SUSPENDED",
+            title: "Player suspended",
+            message: `${user.username} has been suspended.`,
+            userId: user.id,
+          }),
+        ),
+      );
+    }
 
     return NextResponse.json({
       message: `${eligibleUsers.length} player${

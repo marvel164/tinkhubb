@@ -3,20 +3,12 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { getCurrentAdmin } from "@/lib/auth/admin/session";
-
-const categoryValues = [
-  "GENERAL_KNOWLEDGE",
-  "SCIENCE",
-  "HISTORY",
-  "SPORTS",
-  "GEOGRAPHY",
-  "ENTERTAINMENT",
-  "TECHNOLOGY",
-  "BUSINESS",
-  "CURRENT_AFFAIRS",
-] as const;
-
-const difficultyValues = ["EASY", "MEDIUM", "HARD"] as const;
+import {
+  categoryValues,
+  difficultyValues,
+  hasDuplicateOptions,
+  normalizeQuestionText,
+} from "@/lib/admin/question-validation";
 
 const updateQuestionSchema = z.object({
   question: z.string().trim().min(1).max(1000),
@@ -31,76 +23,83 @@ const updateQuestionSchema = z.object({
   status: z.enum(["ACTIVE", "INACTIVE"]),
 });
 
+const questionSelect = {
+  id: true,
+  question: true,
+  optionA: true,
+  optionB: true,
+  optionC: true,
+  optionD: true,
+  correctOption: true,
+  category: true,
+  difficulty: true,
+  status: true,
+  points: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 type RouteContext = {
   params: Promise<{
     questionId: string;
   }>;
 };
 
-export async function GET(
-  _request: Request,
-  { params }: RouteContext,
-) {
+export async function GET(_request: Request, { params }: RouteContext) {
   const admin = await getCurrentAdmin();
 
   if (!admin) {
-    return NextResponse.json(
-      { message: "Unauthorized." },
-      { status: 401 },
-    );
+    return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
   }
 
   const { questionId } = await params;
 
-  const question = await prisma.question.findUnique({
-    where: { id: questionId },
-    select: {
-      id: true,
-      question: true,
-      optionA: true,
-      optionB: true,
-      optionC: true,
-      optionD: true,
-      correctOption: true,
-      category: true,
-      difficulty: true,
-      status: true,
-      points: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
+  try {
+    const question = await prisma.question.findUnique({
+      where: {
+        id: questionId,
+      },
 
-  if (!question) {
+      select: questionSelect,
+    });
+
+    if (!question) {
+      return NextResponse.json(
+        {
+          message: "Question not found.",
+        },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: question,
+    });
+  } catch (error) {
+    console.error("Question GET by ID error:", error);
+
     return NextResponse.json(
-      { message: "Question not found." },
-      { status: 404 },
+      {
+        message: "Unable to load question.",
+      },
+      { status: 500 },
     );
   }
-
-  return NextResponse.json({
-    success: true,
-    data: question,
-  });
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: RouteContext,
-) {
+export async function PATCH(request: Request, { params }: RouteContext) {
   const admin = await getCurrentAdmin();
 
   if (!admin) {
-    return NextResponse.json(
-      { message: "Unauthorized." },
-      { status: 401 },
-    );
+    return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
   }
 
   const { questionId } = await params;
 
   try {
     const body = await request.json();
+
     const parsed = updateQuestionSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -114,35 +113,93 @@ export async function PATCH(
     }
 
     const existingQuestion = await prisma.question.findUnique({
-      where: { id: questionId },
-      select: { id: true },
+      where: {
+        id: questionId,
+      },
+
+      select: {
+        id: true,
+        question: true,
+      },
     });
 
     if (!existingQuestion) {
       return NextResponse.json(
-        { message: "Question not found." },
+        {
+          message: "Question not found.",
+        },
         { status: 404 },
       );
     }
 
-    const question = await prisma.question.update({
-      where: { id: questionId },
-      data: parsed.data,
+    const options = [
+      parsed.data.optionA,
+      parsed.data.optionB,
+      parsed.data.optionC,
+      parsed.data.optionD,
+    ];
+
+    if (hasDuplicateOptions(options)) {
+      return NextResponse.json(
+        {
+          message: "Each answer option must be different.",
+          field: "options",
+          code: "DUPLICATE_OPTIONS",
+        },
+        { status: 409 },
+      );
+    }
+
+    const normalizedQuestion = normalizeQuestionText(parsed.data.question);
+
+    const possibleDuplicates = await prisma.question.findMany({
+      where: {
+        id: {
+          not: questionId,
+        },
+      },
+
       select: {
         id: true,
         question: true,
-        optionA: true,
-        optionB: true,
-        optionC: true,
-        optionD: true,
-        correctOption: true,
-        category: true,
-        difficulty: true,
-        status: true,
-        points: true,
-        createdAt: true,
-        updatedAt: true,
       },
+    });
+
+    const duplicate = possibleDuplicates.find(
+      (question) =>
+        normalizeQuestionText(question.question) === normalizedQuestion,
+    );
+
+    if (duplicate) {
+      return NextResponse.json(
+        {
+          message: "A question with this text already exists.",
+          field: "question",
+          code: "DUPLICATE_QUESTION",
+        },
+        { status: 409 },
+      );
+    }
+
+    const question = await prisma.question.update({
+      where: {
+        id: questionId,
+      },
+
+      data: {
+        question: parsed.data.question,
+        optionA: parsed.data.optionA,
+        optionB: parsed.data.optionB,
+        optionC: parsed.data.optionC,
+        optionD: parsed.data.optionD,
+        correctOption: parsed.data.correctOption,
+        category: parsed.data.category,
+        difficulty: parsed.data.difficulty,
+        points: parsed.data.points,
+        status: parsed.data.status,
+      },
+
+      select: questionSelect,
     });
 
     await prisma.adminAuditLog.create({
@@ -153,7 +210,10 @@ export async function PATCH(
         entityId: question.id,
         details: {
           question: question.question,
+          category: question.category,
+          difficulty: question.difficulty,
           status: question.status,
+          points: question.points,
         },
       },
     });
@@ -162,32 +222,33 @@ export async function PATCH(
       success: true,
       data: question,
     });
-  } catch {
+  } catch (error) {
+    console.error("Question PATCH error:", error);
+
     return NextResponse.json(
-      { message: "Unable to update question." },
+      {
+        message: "Unable to update question.",
+      },
       { status: 500 },
     );
   }
 }
 
-export async function DELETE(
-  _request: Request,
-  { params }: RouteContext,
-) {
+export async function DELETE(_request: Request, { params }: RouteContext) {
   const admin = await getCurrentAdmin();
 
   if (!admin) {
-    return NextResponse.json(
-      { message: "Unauthorized." },
-      { status: 401 },
-    );
+    return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
   }
 
   const { questionId } = await params;
 
   try {
     const existingQuestion = await prisma.question.findUnique({
-      where: { id: questionId },
+      where: {
+        id: questionId,
+      },
+
       select: {
         id: true,
         question: true,
@@ -196,34 +257,62 @@ export async function DELETE(
 
     if (!existingQuestion) {
       return NextResponse.json(
-        { message: "Question not found." },
+        {
+          message: "Question not found.",
+        },
         { status: 404 },
       );
     }
 
-    await prisma.question.delete({
-      where: { id: questionId },
+    const usageCount = await prisma.gameQuestion.count({
+      where: {
+        questionId,
+      },
     });
 
-    await prisma.adminAuditLog.create({
-      data: {
-        adminId: admin.id,
-        action: "DELETE",
-        entity: "QUESTION",
-        entityId: existingQuestion.id,
-        details: {
-          question: existingQuestion.question,
+    if (usageCount > 0) {
+      return NextResponse.json(
+        {
+          message:
+            "This question has already been used in a game and cannot be permanently deleted. Deactivate it instead.",
+          code: "QUESTION_IN_USE",
+          usageCount,
         },
-      },
+        { status: 409 },
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.question.delete({
+        where: {
+          id: questionId,
+        },
+      });
+
+      await tx.adminAuditLog.create({
+        data: {
+          adminId: admin.id,
+          action: "DELETE",
+          entity: "QUESTION",
+          entityId: existingQuestion.id,
+          details: {
+            question: existingQuestion.question,
+          },
+        },
+      });
     });
 
     return NextResponse.json({
       success: true,
       message: "Question deleted successfully.",
     });
-  } catch {
+  } catch (error) {
+    console.error("Question DELETE error:", error);
+
     return NextResponse.json(
-      { message: "Unable to delete question." },
+      {
+        message: "Unable to delete question.",
+      },
       { status: 500 },
     );
   }

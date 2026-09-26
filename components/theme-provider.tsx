@@ -1,84 +1,90 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-
-type Theme = "light" | "dark";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 
 type ThemeContextValue = {
-  theme: Theme;
   isDark: boolean;
   toggleTheme: () => void;
-  setTheme: (theme: Theme) => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-const STORAGE_KEY = "tinkhubb-theme";
+const PUBLIC_THEME_KEY = "tinkhupp-theme";
 
-export function ThemeProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const [theme, setThemeState] = useState<Theme>("light");
+function readPublicTheme() {
+  if (typeof window === "undefined") {
+    return false;
+  }
 
-  const applyTheme = useCallback((nextTheme: Theme) => {
-    document.documentElement.classList.toggle(
-      "dark",
-      nextTheme === "dark",
-    );
+  return window.localStorage.getItem(PUBLIC_THEME_KEY) === "dark";
+}
 
-    document.documentElement.style.colorScheme = nextTheme;
+function applyPublicTheme(isDark: boolean) {
+  if (typeof document === "undefined") {
+    return;
+  }
 
-    try {
-      localStorage.setItem(STORAGE_KEY, nextTheme);
-    } catch {
-      // Ignore storage failures.
-    }
+  document.documentElement.classList.toggle("dark", isDark);
+}
 
-    setThemeState(nextTheme);
-  }, []);
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
 
+  const [isDark, setIsDark] = useState(false);
+
+  /*
+   * Public theme is loaded only for the public Tinkhupp surface.
+   *
+   * Admin routes are deliberately excluded because AdminShell owns
+   * the admin theme independently.
+   */
   useEffect(() => {
-    try {
-      const savedTheme = localStorage.getItem(STORAGE_KEY);
-
-      if (savedTheme === "dark") {
-        applyTheme("dark");
-        return;
-      }
-    } catch {
-      // Fall back to light mode.
+    if (isAdminRoute) {
+      /*
+       * Never allow the public theme to control the admin surface.
+       * AdminShell will immediately apply the admin preference.
+       */
+      document.documentElement.classList.remove("dark");
+      return;
     }
 
-    applyTheme("light");
-  }, [applyTheme]);
+    const saved = readPublicTheme();
 
-  const toggleTheme = useCallback(() => {
-    applyTheme(theme === "dark" ? "light" : "dark");
-  }, [applyTheme, theme]);
+    setIsDark(saved);
+    applyPublicTheme(saved);
+  }, [isAdminRoute]);
+
+  function toggleTheme() {
+    /*
+     * This provider must never toggle the admin surface.
+     */
+    if (isAdminRoute) {
+      return;
+    }
+
+    setIsDark((current) => {
+      const next = !current;
+
+      window.localStorage.setItem(PUBLIC_THEME_KEY, next ? "dark" : "light");
+
+      applyPublicTheme(next);
+
+      return next;
+    });
+  }
 
   const value = useMemo(
     () => ({
-      theme,
-      isDark: theme === "dark",
+      isDark,
       toggleTheme,
-      setTheme: applyTheme,
     }),
-    [applyTheme, theme, toggleTheme],
+    [isDark, isAdminRoute],
   );
 
   return (
-    <ThemeContext.Provider value={value}>
-      {children}
-    </ThemeContext.Provider>
+    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
   );
 }
 
@@ -86,7 +92,7 @@ export function useTheme() {
   const context = useContext(ThemeContext);
 
   if (!context) {
-    throw new Error("useTheme must be used inside ThemeProvider.");
+    throw new Error("useTheme must be used inside a ThemeProvider.");
   }
 
   return context;

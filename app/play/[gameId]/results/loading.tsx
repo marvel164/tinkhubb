@@ -4,7 +4,7 @@ export default function Loading() {
       <header className="border-b border-[#f1e5dc] bg-[#fffaf6]">
         <div className="mx-auto flex h-[78px] max-w-[1240px] items-center px-5 sm:px-8">
           <span className="text-[23px] font-black tracking-[-0.04em] text-[#121212]">
-            TinkHubb
+            Tinkhupp
           </span>
         </div>
       </header>

@@ -28,7 +28,7 @@ export default function Footer() {
             href="/"
             className="text-2xl font-bold tracking-tight text-[#FF6B00]"
           >
-            TinkHubb
+            Tinkhupp
           </Link>
         </div>
 
@@ -88,7 +88,7 @@ export default function Footer() {
       </div>
 
       <div className="border-t border-[#f1ddd0] px-6 py-6 text-center text-xs text-[#8b6d5d] dark:border-[#3a2923] dark:text-[#a99386]">
-        © 2026 TinkHubb. All rights reserved.
+        © 2026 Tinkhupp. All rights reserved.
       </div>
     </footer>
   );

@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
-import { randomInt } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { normalizePhone, registrationSchema } from "@/lib/validation/auth";
+import { createUserSession } from "@/lib/auth/session";
+import { createAdminNotification } from "@/lib/notifications/admin";
+import {
+  normalizePhone,
+  registrationSchema,
+} from "@/lib/validation/auth";
 
 export async function POST(request: Request) {
   try {
@@ -59,46 +62,34 @@ export async function POST(request: Request) {
       );
     }
 
-    // Remove previous unused registration OTPs for this phone.
-    await prisma.otpCode.deleteMany({
-      where: {
-        phone,
-        purpose: "REGISTRATION",
-        verifiedAt: null,
-      },
-    });
-
-    const otp = randomInt(100000, 1000000).toString();
-    const codeHash = await bcrypt.hash(otp, 10);
-
-    await prisma.otpCode.create({
+    const user = await prisma.user.create({
       data: {
+        username,
         phone,
-        pendingUsername: username,
-        codeHash,
-        purpose: "REGISTRATION",
-        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        status: "ACTIVE",
+      },
+      select: {
+        id: true,
+        username: true,
+        phone: true,
       },
     });
 
-    /*
-     * Development delivery.
-     *
-     * We deliberately do not expose the OTP in the browser response.
-     * Until the SMS provider credentials are configured, the OTP is
-     * printed to the server terminal so the complete authentication
-     * flow can be tested locally.
-     */
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`\n[TINKHUBB DEV OTP] ${phone} → ${otp}\n`);
-    }
+    await createAdminNotification({
+      type: "NEW_USER",
+      title: "New player registered",
+      message: `${user.username} just joined Tinkhupp.`,
+      userId: user.id,
+    });
+
+    await createUserSession(user.id);
 
     return NextResponse.json({
       success: true,
-      message: "Verification code sent.",
+      message: "Account created successfully.",
       data: {
-        phone,
-        username,
+        username: user.username,
+        phone: user.phone,
       },
     });
   } catch (error) {

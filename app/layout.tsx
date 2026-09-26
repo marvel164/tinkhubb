@@ -3,15 +3,15 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 
 export const metadata: Metadata = {
-  title: "TinkHubb — Think Fast. Score Big.",
+  title: "Tinkhupp — Think Fast. Score Big.",
   description:
-    "Test your knowledge, earn points, keep your streak alive, and climb the TinkHubb leaderboard.",
+    "Test your knowledge, earn points, keep your streak alive, and climb the Tinkhupp leaderboard.",
 };
 
 const themeScript = `
 (function () {
   try {
-    var theme = localStorage.getItem("tinkhubb-theme");
+    var theme = localStorage.getItem("tinkhupp-theme");
 
     if (theme === "dark") {
       document.documentElement.classList.add("dark");
